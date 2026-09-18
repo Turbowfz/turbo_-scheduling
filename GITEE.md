@@ -29,7 +29,7 @@ https://gitee.com/turbowfz/turbo_-scheduling/raw/master/update.json
 versionCode 比已安装的大  →  提示可更新  →  从 zipUrl 下载 zip 安装
 ```
 
-- `versionCode` 由版本号数字拼成:`v26.103` → `26103`,**必须递增**,否则管理器不会提示
+- `versionCode` 由版本号数字拼成:`v26.104` → `26103`,**必须递增**,否则管理器不会提示
 - `zipUrl` 指向仓库根目录里那个 `Turbo调度<版本>.zip`(中文名做 URL 编码)
 - `changelog` 指向 `changelog.md`,由 `release.js` 从模块的 `Update.md` 顶部版本块自动生成
 
@@ -53,9 +53,9 @@ git push
 ```bash
 cd C:\Users\User\Desktop\Turbo调度项目
 node set-gitee.js turbowfz turbo_-scheduling       # 绑定仓库地址
-node make-zip.js 模块/Turbo调度26.103 备选.zip     # 打包
+node make-zip.js 模块/Turbo调度26.104 备选.zip     # 打包
 node release.js --no-build                          # 刷新 update.json / changelog.md
-git init && git add -A && git commit -m "v26.103"
+git init && git add -A && git commit -m "v26.104"
 git remote add origin https://gitee.com/turbowfz/turbo_-scheduling.git
 git push -u origin master
 ```

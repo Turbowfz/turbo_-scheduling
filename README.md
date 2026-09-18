@@ -29,7 +29,7 @@
 
 - `模块/Turbo调度<版本>/module.prop` 里的 `updateJson` 指向本仓库的 `update.json`
 - `update.json` 提供 `version` / `versionCode` / `zipUrl` / `changelog` 四个字段
-- 管理器比对 `versionCode`(由版本号数字拼成,如 v26.103 → 26103),更大即提示可更新
+- 管理器比对 `versionCode`(由版本号数字拼成,如 v26.104 → 26103),更大即提示可更新
 - 更新用的 zip 就是仓库根目录里的 `Turbo调度<版本>.zip`
 
 发布新版本只需一条命令(自动打包 zip、刷新 `changelog.md` 与 `update.json`):
@@ -72,7 +72,7 @@ node set-gitee.js turbowfz turbo_-scheduling
 ### 模块 zip
 
 ```bash
-node make-zip.js 模块/Turbo调度26.103 Turbo调度26.103.zip
+node make-zip.js 模块/Turbo调度26.104 Turbo调度26.104.zip
 ```
 
 `make-zip.js` 会写入显式目录条目(否则部分手机的文件管理器/刷入器会把内部路径显示成扁平的文件名)。
@@ -90,6 +90,6 @@ cp target/aarch64-linux-android/release/cosa ../模块/Turbo调度<版本>/bin/c
 
 ## 致谢
 
-见 [模块内的 Thanks_list.md](模块/Turbo调度26.103/Thanks_list.md)。
+见 [模块内的 Thanks_list.md](模块/Turbo调度26.104/Thanks_list.md)。
 
 第三方组件:WebUI 载体 [KsuWebUI](https://github.com/a13e300/KsuWebUI)(APK 随发行版 zip 提供,未纳入本仓库源码)、SQLite(`libsqlite3.so`)。
