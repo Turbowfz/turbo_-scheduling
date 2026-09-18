@@ -1,7 +1,10 @@
 #Update log
 #26.104
--UI版表单按官方云控配置+参数解析重写: gpa_config 仅频率上下限 (cl/ch/sm/gf/gm/tl/th) + 开关核心 (core) + es4g + mema (按配置实际存在渲染, 全部带官方实测注释)
 -移除破坏神模式: 删除磁贴 APK 与安装/卸载流程 (安装器不再询问, 开机也不再生成还原副本); 旧版残留 (挂载源/根目录APK/标志文件/package) 在覆盖安装与卸载时自动清理
+-模块瘦身: 移除 Devastator.apk 与 scene_config 里为老磁贴保留的 config/ 还原副本, zip 体积 4.65MB → 3.93MB
+-新增云更新支持: module.prop 增加 versionCode 与 updateJson, KernelSU/Magisk 管理器内可直接检查并安装新版本 (本版起生效)
+#26.103
+-UI版表单按官方云控配置+参数解析重写: gpa_config 仅频率上下限 (cl/ch/sm/gf/gm/tl/th) + 开关核心 (core) + es4g + mema (按配置实际存在渲染, 全部带官方实测注释)
 -云控注入只注入手机上已安装的游戏: cosa sync 按 pm list packages -3 过滤 cccf 配置 (未安装的跳过并计数), enc 组同规则过滤
 -cpu_config 场景改为手动添加: 不预置展示, 只渲染配置里实际存在的场景; 新增「官方场景名参考」折叠表 (14 个场景名 + 逐个解释 + 地图城/村命名规则), 已添加的场景标绿
 -thermal_frame 保持统一标准格式 (balance_nl/highperf_nl/ternary): 一代 tt/phase/param/mg/mgc 会压帧率下限并在高温强制退档掉帧, 保存时自动转换为 NL 曲线 (只按温度降目标帧率), 「重置」恢复官方默认档位集

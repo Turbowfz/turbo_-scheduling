@@ -1,17 +1,4 @@
 #26.104
--UI版表单按官方云控配置+参数解析重写: gpa_config 仅频率上下限 (cl/ch/sm/gf/gm/tl/th) + 开关核心 (core) + es4g + mema (按配置实际存在渲染, 全部带官方实测注释)
 -移除破坏神模式: 删除磁贴 APK 与安装/卸载流程 (安装器不再询问, 开机也不再生成还原副本); 旧版残留 (挂载源/根目录APK/标志文件/package) 在覆盖安装与卸载时自动清理
--云控注入只注入手机上已安装的游戏: cosa sync 按 pm list packages -3 过滤 cccf 配置 (未安装的跳过并计数), enc 组同规则过滤
--cpu_config 场景改为手动添加: 不预置展示, 只渲染配置里实际存在的场景; 新增「官方场景名参考」折叠表 (14 个场景名 + 逐个解释 + 地图城/村命名规则), 已添加的场景标绿
--thermal_frame 保持统一标准格式 (balance_nl/highperf_nl/ternary): 一代 tt/phase/param/mg/mgc 会压帧率下限并在高温强制退档掉帧, 保存时自动转换为 NL 曲线 (只按温度降目标帧率), 「重置」恢复官方默认档位集
--es4g 只保留 isolate/state/tcount/clist/fps/delay/partial 七项; mema 分全局 (beta/mode/tl) 与 custom 按簇覆盖; 其余官方键不渲染但原值保留; ternary 只读防布尔变字符串; resv/simple_client 等不纳入表单 (原样保留)
--game_zone 增加 key_worker_ux / white_list_ux / search_white_list / fixed_critical_task (支持数组JSON或字符串), 删除 bind_main 编辑项; 保留原配置中未渲染键不改写
--UI 版粘贴 JSON 改为文本区手动粘贴 (WebView 无剪贴板读权限, navigator.clipboard.readText 会被拒): 点「粘贴 JSON」展开文本区 → 长按粘贴 → 「载入表单」解析校验 (失败不覆盖原配置) → 可编辑后保存到 cccf
--gpa_config: es4g/mema 不存在时显示「添加」入口 (骨架: es4g={isolate,state,fps,partial}; mema={beta,mode,tl,custom 4簇}; game_config 含空键); ACE5 崩铁平铺 gpa 显示为全局配置
--UI 版空值语义 (按结构分三档): ①大纲容器 (cpu_config/gpa_config/es4g/mema/game_zone/fps_stabilizer/game_config) 永不删除, 保住结构; ②cpu_config 场景 boost 为空 → 删该场景, 场景全空 → cpu_config 置空串; ③可选叶子参数 (es4g.tcount / game_zone.white_list_ux / fps_stabilizer.mode 等) 为空 → 删掉该参数; 原本不存在的键不新增, 原值 null 保持
--新增 game_config 可编辑区块: 无 game_config 时可一键添加官方格式骨架; 保存到 cccf 时将 from_server 置 0
--game_config 可编辑项 = cht_boost_max / cht_boost_min / ctn / ctep (ctep 类型跟随原配置: 官方 9 份数字 1 份字符串, 不强制转换), 其余官方键只读展示
--模块日志改为重启清空: 每次开机由 service.sh 的 log_reset 清空 log/*.log (原策略是超 512KB 截尾保留 200 行), 重启后日志从空开始
--UI 文案标点统一为英文半角 (与官方云控配置文件一致; 官方 101 份配置里值含中文 0 处、含全角标点 0 处): 参数注释/提示/日志/页面说明里的 。、，：；（）「」… 全部换成 . , ; : ( ) " ...
--安装器沿用逻辑修正: 原"沿用"只看二改调度标志, 只开云控注入的用户覆盖安装没有沿用选项 (每次都要重新答题, 手滑或超时会翻转状态) — 现在二改/云控任一启用即提示沿用并按原状态保持; 云控提问超时不再默认"跳过"(原会静默清掉已启用的云控), 改为保持原状态
--修复 UI 版「粘贴 JSON」看不到文本框: 按钮同时被 inline onclick 与 on() 绑定, 一次点击触发两遍(展开又收起) → 改为单一绑定, 且函数幂等只展开, 折叠交给「取消」
+-模块瘦身: 移除 Devastator.apk 与 scene_config 里为老磁贴保留的 config/ 还原副本, zip 体积 4.65MB → 3.93MB
+-新增云更新支持: module.prop 增加 versionCode 与 updateJson, KernelSU/Magisk 管理器内可直接检查并安装新版本 (本版起生效)
