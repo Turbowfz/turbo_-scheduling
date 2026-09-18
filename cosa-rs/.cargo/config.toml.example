@@ -1,0 +1,27 @@
+# ── cosa 构建配置模板 ──
+# 复制为同目录下的 config.toml 后, 把 NDK 路径改成你自己的:
+#     cp config.toml.example config.toml
+#
+# 需要: Android NDK (本项目用 r29), Rust 已装 aarch64-linux-android 目标:
+#     rustup target add aarch64-linux-android
+
+[build]
+target = "aarch64-linux-android"
+
+[target.aarch64-linux-android]
+# ↓↓↓ 改成你的 NDK 路径 (注意 Windows 下用正斜杠)
+linker = "C:/AndroidSdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android24-clang.cmd"
+ar = "C:/AndroidSdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
+# 链接模块自带的 libsqlite3.so, 并把运行时搜索路径烧进 rpath
+# (模块安装路径固定 /data/adb/modules/Turbo_Scheduling, 该目录下 bin/libsqlite3.so)
+rustflags = [
+  "-L", "native=./prebuilt",
+  "-C", "link-arg=-Wl,-rpath,/data/adb/modules/Turbo_Scheduling/bin",
+]
+
+[env]
+CC_aarch64_linux_android = "C:/AndroidSdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android24-clang.cmd"
+AR_aarch64_linux_android = "C:/AndroidSdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
+# 让 libsqlite3-sys 用 prebuilt 目录里的 .so + sqlite3.h
+SQLITE3_LIB_DIR = "./prebuilt"
+SQLITE3_INCLUDE_DIR = "./prebuilt"

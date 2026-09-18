@@ -1,0 +1,18 @@
+# ── 构建缓存 ──
+cosa-rs/target/
+
+# ── 参考资料与逆向工程 (不公开) ──
+参考/
+逆向/
+磁贴/
+
+# ── 本机构建配置 (NDK 路径各人不同, 用 .cargo/config.toml.example 作模板) ──
+cosa-rs/.cargo/config.toml
+
+# ── 第三方应用 (随模块 zip 提供, 不入源码库) ──
+**/KsuWebUI.apk
+
+# ── 系统杂项 ──
+Thumbs.db
+desktop.ini
+.DS_Store

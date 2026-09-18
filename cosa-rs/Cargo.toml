@@ -1,0 +1,21 @@
+[package]
+name = "cosa"
+version = "2.0.0"
+edition = "2021"
+
+[dependencies]
+# 不启用 bundled: 链接模块自带的 libsqlite3.so (3.49.1, inject 也依赖它)
+# 体积收益: 二进制 1.49MB → ~400KB (省 ~1.1MB), 且不依赖系统 SQLite
+rusqlite = { version = "0.32", features = [] }
+# preserve_order: 默认 Map 是 BTreeMap(按键排序), 会让写库的 JSON 变成字母序,
+# 与 cccf 模板顺序不一致 → WebUI「从DB读取」和「从cccf读取」显示顺序不同。
+# 开启后用 IndexMap 保留插入顺序 (读=SELECT * 列顺序=模板顺序, 写=源文件顺序)
+serde_json = { version = "1", features = ["preserve_order"] }
+anyhow = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+panic = "abort"
+codegen-units = 1
