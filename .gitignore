@@ -16,3 +16,6 @@ cosa-rs/.cargo/config.toml
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# ── 发布素材 (酷安帖子等, 不入仓库) ──
+酷安帖子.md
