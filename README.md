@@ -90,6 +90,16 @@ cp target/aarch64-linux-android/release/cosa ../模块/Turbo调度<版本>/bin/c
 
 ## 致谢
 
-见 [模块内的 Thanks_list.md](模块/Turbo调度26.104/Thanks_list.md)。
+完整名单见 [模块内的 Thanks_list.md](模块/Turbo调度26.104/Thanks_list.md):@安与的安(部分代码/框架/思路)、@喵喵ski(原版 scene 文件)、@星海亦有岸(部分代码和思路)、@toolfor(云控注入工具)、@ox奈睿(8g3 第五人格云控配置)、@巭孬甭莪(部分思路与 API)。
 
-第三方组件:WebUI 载体 [KsuWebUI](https://github.com/a13e300/KsuWebUI)(APK 随发行版 zip 提供,未纳入本仓库源码)、SQLite(`libsqlite3.so`)。
+### 第三方组件
+
+| 组件 | 说明 | 源码 |
+|---|---|---|
+| `模块/<版本>/bin/inject` | 云控注入工具(enc 解密注入),由 @toolfor 提供 | **不在本仓库**(本仓库只含二进制) |
+| `模块/<版本>/bin/libsqlite3.so` | SQLite 3.49.1,`cosa` 与 `inject` 共用 | 公开领域 |
+| `模块/<版本>/modules/AsoulOpt.zip` | AsoulOpt 子模块 | 上游项目 |
+| `KsuWebUI.apk` | WebUI 载体应用([a13e300/KsuWebUI](https://github.com/a13e300/KsuWebUI)) | 第三方,未纳入本仓库(随发行版 zip 提供) |
+| `模块/<版本>/<SoC>/` | 各平台 Scene 调度与云控模板 | 基于官方配置整理 |
+
+仓库内**本项目的代码**以 GPL-3.0 发布(见 LICENSE);上表中的第三方组件版权归各自作者,不在 GPL-3.0 覆盖范围内。
