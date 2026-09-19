@@ -21,9 +21,11 @@ installed_pkgs=$(pm list packages -3 2>/dev/null | grep '^package:' | sed 's/^pa
 [ -z "$installed_pkgs" ] && { log "错误: 无法获取已安装包列表"; echo "  ! 无法获取已安装应用列表"; exit 1; }
 
 rule_pkgs=""
+rule_count=0
 for json_file in "$BACK_DIR"/*.json "$BACK_DIR"/*.enc; do
-  # 纯 shell 剥后缀: sed 的 \| 交替是 GNU 扩展, Android bionic regex 不支持
-  [ -f "$json_file" ] && { b=$(basename "$json_file"); rule_pkgs="$rule_pkgs ${b%.*}"; }
+  # 全部走 shell 内建: 真机实测一次 basename/grep 要 11~22ms, 冷启动路径上省下来的都是秒
+  [ -f "$json_file" ] || continue
+  b="${json_file##*/}"; rule_pkgs="$rule_pkgs ${b%.*}"; rule_count=$((rule_count + 1))
 done
 if [ -z "$rule_pkgs" ]; then
   log "错误: 云控模板缺失 ($BACK_DIR), 跳过匹配, 请重新安装模块"
@@ -32,7 +34,7 @@ if [ -z "$rule_pkgs" ]; then
 fi
 # 按长度降序, 优先最长模板 (避免短前缀误配)
 rule_pkgs_sorted=$(for t in $rule_pkgs; do echo "$t"; done | awk '{print length, $0}' | sort -rn | sed 's/^[0-9]* //')
-log "加载规则模板: $(echo "$rule_pkgs" | wc -w) 个"
+log "加载规则模板: $rule_count 个"
 
 # 白名单兜底 (变体匹配未命中时生效); 来源: 9400云控修改 EXTRA_MAP, 用户可编辑 scripts/whitelist.conf
 WL_CONF="${0%/*}/whitelist.conf"
@@ -77,7 +79,11 @@ adapt_json() {
   return $copied   # 0=实际写入 (调用方据此计数)
 }
 
-pkg_in_list() { echo "$installed_pkgs" | grep -qxF "$1"; }
+# 成员判断走内建 case (在含首尾分隔符的串里找 "|包名|"): 原来的 echo|grep 每次两个进程,
+# 而规则 10 条 + 白名单 17 条就是 54 个进程 ≈ 1 秒 —— 这是这条路径真正的开销
+INSTALLED_PIPED="|"
+for _ip in $installed_pkgs; do INSTALLED_PIPED="$INSTALLED_PIPED$_ip|"; done
+pkg_in_list() { case "$INSTALLED_PIPED" in *"|$1|"*) return 0 ;; esac; return 1; }
 
 match_count=0
 
@@ -130,7 +136,8 @@ for entry in $WHITELIST_MAP; do
 done
 
 log "匹配完成: 新增 $match_count"
-total_json=$(ls "$CCCF_DIR"/*.json 2>/dev/null | wc -l)
+total_json=0
+for _f in "$CCCF_DIR"/*.json; do [ -f "$_f" ] && total_json=$((total_json + 1)); done
 log "cccf目录共 $total_json 个配置文件"
 if [ "$total_json" -eq 0 ]; then
   echo "  ! 未检测到已安装的受支持游戏"

@@ -15,6 +15,9 @@ mkdir -p "$LOG_DIR"
 
 inject_configs() {
   log "=== 注入模式开始 ==="
+  # 注入失败标记: enc 兜底失败不再直接 return —— json 部分已经写好了, 必须继续走到
+  # 收尾 localize 与 COSA 重启 (否则失败的兜底会把已生效的 json 配置一起晾着)
+  INJECT_FAILED=0
 
   # 并发锁 (开机后台与手动注入互斥); 陈旧锁超10分钟接管
   LOCK_DIR="$LOG_DIR/.inject.lock"
@@ -51,14 +54,18 @@ inject_configs() {
     echo "$installed_lc" | grep -qxF "$(echo "$1" | tr 'A-Z' 'a-z')"
   }
 
-  # 注入器执行: 成功=退出码0且无Error; "未获取到第三方应用"重试; 其余错误快速失败
+  # 注入器执行: 成功=退出码0且无Error; "未获取到第三方应用"重试; 其余错误快速失败。
+  # 保护只在真正调注入器的那一瞬间撤掉 (它要插行, 我们的 insert 触发器会拦), 进程一返回立刻重新武装 ——
+  # 否则失败重试的 30 秒等待期间库是裸的, 云端可以趁机把服务器行插进来
   run_inject() {
     local tries=0
     local out=""
     local rc=0
     while [ $tries -lt 5 ]; do
+      LD_LIBRARY_PATH="$MODPATH/bin" "$MODPATH/bin/cosa" unprotect >/dev/null 2>&1
       out=$(LD_LIBRARY_PATH="$MODPATH/bin" "$INJECT" 2>&1)
       rc=$?
+      LD_LIBRARY_PATH="$MODPATH/bin" "$MODPATH/bin/cosa" protect >/dev/null 2>&1
       if [ "$rc" -eq 0 ] && ! echo "$out" | grep -qi "error"; then
         echo "$out"
         return 0
@@ -90,8 +97,7 @@ inject_configs() {
       log "json 注入完成 ($json_count 个, cosa sync)"
     else
       log "错误: cosa sync 执行失败 (rc=$COSA_RC): $(echo "$COSA_OUT" | tail -2)"
-      rm -rf "$ENC_RUN" 2>/dev/null
-      return 1
+      INJECT_FAILED=1
     fi
   fi
 
@@ -99,29 +105,31 @@ inject_configs() {
   local enc_pick=0
   for enc in "$CCCF_DIR"/*.enc; do
     [ -f "$enc" ] || continue
-    pkg=$(basename "$enc" .enc)
+    pkg="${enc##*/}"; pkg="${pkg%.enc}"
     if [ ! -f "$CCCF_DIR/$pkg.json" ] && pkg_installed "$pkg"; then
       enc_pick=$((enc_pick + 1))
     fi
   done
   if [ "$enc_pick" -gt 0 ]; then
+    rm -rf "$ENC_RUN" 2>/dev/null
     mkdir -p "$ENC_RUN"
-    rm -f "$ENC_RUN"/* 2>/dev/null
     for enc in "$CCCF_DIR"/*.enc; do
       [ -f "$enc" ] || continue
-      pkg=$(basename "$enc" .enc)
+      pkg="${enc##*/}"; pkg="${pkg%.enc}"
       if [ ! -f "$CCCF_DIR/$pkg.json" ] && pkg_installed "$pkg"; then
         cp -f "$enc" "$ENC_RUN/" 2>/dev/null
       fi
     done
     echo ""
     echo "── 注入 .enc ($enc_pick 个) ──"
+    # 注入器 (第三方闭源) 写的是 from_server=1 的服务器行, 且它自己会装一套旧版弱触发器 →
+    # 注入成功后必须立刻 localize: 标回 from_server=0 + 校验落库 + 重装我们的新语义触发器
     if run_inject; then
-      log "enc 注入完成 ($enc_pick 个)"
+      LD_LIBRARY_PATH="$MODPATH/bin" "$MODPATH/bin/cosa" localize "$CCCF_DIR" 2>&1 | sed 's/^/  /'
+      log "enc 注入完成 ($enc_pick 个, 已标回本地)"
     else
       log "错误: inject (enc) 执行失败"
-      rm -rf "$ENC_RUN" 2>/dev/null
-      return 1
+      INJECT_FAILED=1
     fi
   else
     log "enc: 无兜底 (全部已有 json 覆盖)"
@@ -130,8 +138,9 @@ inject_configs() {
 
   rm -rf "$ENC_RUN" 2>/dev/null
 
-  # WAL 收尾: cosa sync 内部已 checkpoint; enc 注入后补一次 (属主修复工具内部处理)
-  LD_LIBRARY_PATH="$MODPATH/bin" "$MODPATH/bin/cosa" protect >/dev/null 2>&1
+  # 收尾: cccf 里所有包的行统一标回 from_server=0 (json 路径本来就是 0, 这里兜注入器写进来的
+  # 服务器标记行) + 校验 + 重新武装保护 (幂等, 顺带覆盖注入器装的旧版弱触发器)
+  LD_LIBRARY_PATH="$MODPATH/bin" "$MODPATH/bin/cosa" localize "$CCCF_DIR" 2>&1 | sed 's/^/  /'
 
   # 重启 COSA 强制重读 DB (服务四件套对齐 start_official)
   setprop persist.sys.oplus.gameswitch.enable 0
@@ -145,7 +154,7 @@ inject_configs() {
   start horae 2>/dev/null
 
   log "=== 注入模式结束 ==="
-  return 0
+  return "$INJECT_FAILED"
 }
 
 setup_mode() {

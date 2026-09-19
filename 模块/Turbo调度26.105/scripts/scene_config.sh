@@ -81,7 +81,7 @@ copy_to_scene() {
   local count=0 skip=0
   for file in "$CONFIG_DIR"/*; do
     [ -f "$file" ] || continue
-    name=$(basename "$file")
+    name="${file##*/}"
 
     # powercfg.sh: 仅内容变化时覆盖 (开机重写与 Scene 执行有竞争, 26.83/84 掉帧教训); oplus 版 0 字节=有意清空
     if [ "$name" = "powercfg.sh" ]; then
@@ -146,16 +146,6 @@ copy_to_scene() {
   done
 
   log "Scene配置覆盖完成 (更新 $count, 跳过 $skip${force:+ [强制]})"
-}
-
-wait_scene_dir() {
-  local waited=0
-  while [ ! -d "$VT_FILES" ]; do
-    sleep 2; waited=$((waited + 2))
-    [ $waited -ge 60 ] && { log "等待Scene目录超时"; return 1; }
-  done
-  chmod 777 "$VT_FILES"
-  log "Scene目录就绪 (等待${waited}s)"
 }
 
 # 单独询问云控注入 (无Scene场景)
@@ -361,7 +351,8 @@ case "$MODE" in
     ;;
   deploy)
     log "=== 部署模式开始 ==="
-    wait_scene_dir || { log "部署中止: Scene目录不存在"; exit 1; }
+    # prepare_scene_dir (common.sh) 干的就是原来 wait_scene_dir 的事, 还多一步 mkdir -p 兜底
+    prepare_scene_dir 60 || { log "部署中止: Scene目录不存在"; exit 1; }
     copy_to_scene force   # 每次开机强制切回二改调度
     log "=== 部署模式结束 ==="
     ;;

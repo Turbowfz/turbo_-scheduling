@@ -5,7 +5,16 @@
 
 SCRC_DIR="/data/adb/turbo"
 VT_FILES="/data/data/com.omarea.vtools/files"
-GOV_PATH=$(ls /sys/devices/system/cpu/cpufreq/policy*/scaling_available_governors 2>/dev/null | head -n 1)
+
+# 调速器节点: 原来在 source 时就用 ls|head 探一次 (每次 source 白付两个进程 ≈ 22ms,
+# 而绝大多数脚本根本不问 是不是风驰内核) → 改成问的时候才找, 且用 shell 通配符不 fork
+gov_path() {
+  local g
+  for g in /sys/devices/system/cpu/cpufreq/policy*/scaling_available_governors; do
+    [ -f "$g" ] && { echo "$g"; return 0; }
+  done
+  return 1
+}
 
 log() {
   echo "[$(date '+%m-%d %T')] $1" >> "${LOG_FILE:-/dev/null}"
@@ -49,7 +58,7 @@ restore_scene_now() {
     local bf ok=1
     for bf in "$SCRC_DIR/backup"/*.json; do
       [ -f "$bf" ] || continue
-      [ -f "$VT_FILES/$(basename "$bf")" ] || ok=0
+      [ -f "$VT_FILES/${bf##*/}" ] || ok=0
     done
     [ "$ok" = "1" ] || { log "错误: 还原失败 (备份未生效), 已保留备份"; return 1; }
   fi
@@ -92,7 +101,9 @@ is_8gen5() {
 
 # ── 是否支持风驰 (调速器含 scx/hmbird 即可, 不按 SoC 排除) ──
 is_oplus() {
-  [ -n "$GOV_PATH" ] && grep -qEw "scx|hmbird" "$GOV_PATH"
+  local gp
+  gp=$(gov_path) || return 1
+  grep -qEw "scx|hmbird" "$gp"
 }
 
 # ── 音量键 ──

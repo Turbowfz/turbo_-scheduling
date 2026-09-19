@@ -4,12 +4,15 @@
 //    cosa check                              数据库就绪检查
 //    cosa list                               已建档包名清单
 //    cosa read <包名> [输出文件]              读单行 JSON (嵌套解包)
-//    cosa write <包名> <json文件>             写单行 (from_server=0 + 保护 + WAL)
+//    cosa write <包名> <json文件>             写单行 (from_server=0 + 清服务器同名行 + 保护 + WAL)
 //    cosa delete <包名>                       删行
 //    cosa sync [cccf目录]                     全量: 目录内 *.json → 数据库 (开机注入/手动注入共用)
-//   cosa protect | unprotect                 三联保护开关
+//    cosa localize <cccf目录>                 兜底注入后用: 把 *.enc 对应的行标回 from_server=0 并重新武装保护
+//    cosa protect | unprotect                 三联保护开关
+//    cosa diag                               诊断: 触发器现状 + 本地/服务器行数 + 注入拦截自检
 //  设计: rusqlite 直连 (零 shell/零命令行 SQL); 参数化绑定; UPDATE/INSERT 二选一;
-//        WAL checkpoint 收尾; enc 配置不支持 (由 bin/inject 兜底)。
+//        WAL checkpoint 收尾; enc 配置不支持 (由 bin/inject 兜底, 注入后 localize 收尾)。
+//  from_server 语义: 0=本地(模块注入, 受保护), !=0=服务器下发(一律不许进库)。
 // ═══════════════════════════════════════════════
 
 use anyhow::{bail, Context, Result};
@@ -101,26 +104,77 @@ fn real_col<'a>(cols: &'a [(String, String)], want: &str) -> Option<&'a str> {
         .map(|(n, _)| n.as_str())
 }
 
-/// 三联保护触发器 (inject.rs 同款 SQL)
+/// 表结构快照: 每条命令只查一次 PRAGMA (列名/NOT NULL 骨架列), 不按包重复查。
+/// notnull = (列名, 是否数值型) —— 建档时按类型给安全默认值 (漏一个 NOT NULL 列整条 INSERT 就被拒)
+struct TableInfo {
+    cols: Vec<(String, String)>,
+    pc: String,
+    fc: Option<String>,
+    notnull: Vec<(String, bool)>,
+}
+
+impl TableInfo {
+    fn load(conn: &Connection) -> Result<Self> {
+        let cols = load_cols(conn)?;
+        let pc = real_col(&cols, "package_name")
+            .context("缺少 package_name 列")?
+            .to_string();
+        let fc = real_col(&cols, "from_server").map(|s| s.to_string());
+        let mut st = conn.prepare(&format!(
+            "SELECT name, type FROM pragma_table_info('{}') WHERE \"notnull\" = 1 AND dflt_value IS NULL",
+            TABLE
+        ))?;
+        let rows = st.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            ))
+        })?;
+        let mut notnull = Vec::new();
+        for r in rows {
+            let (name, ty) = r?;
+            if name.eq_ignore_ascii_case(&pc) {
+                continue;
+            }
+            let up = ty.to_uppercase();
+            let numeric = up.contains("INT") || up.contains("REAL") || up.contains("NUM");
+            notnull.push((name, numeric));
+        }
+        Ok(TableInfo { cols, pc, fc, notnull })
+    }
+}
+
+/// 三联保护: 本地行 (from_server=0, 就是模块注入的配置) 不许被改写/删除;
+/// 服务器下发的行 (from_server!=0) 一律不许进库 —— 它的 INSERT 整行被跳过。
+///
+/// 这里必须 DROP + CREATE, 不能再用 CREATE IF NOT EXISTS: 第三方注入器 bin/inject 里
+/// 内置了同名的旧版触发器 (它的 insert 规则是"同包名已有本地行时才拦"), 用 IF NOT EXISTS
+/// 的话它会先建出弱版, 我们的新语义就永远顶不上去。
 fn install_protection(conn: &Connection) -> Result<()> {
     conn.execute_batch(&format!(
         r#"
-        CREATE TRIGGER IF NOT EXISTS protect_local_pkg_update
+        BEGIN;
+
+        DROP TRIGGER IF EXISTS protect_local_pkg_update;
+        DROP TRIGGER IF EXISTS protect_local_pkg_insert;
+        DROP TRIGGER IF EXISTS protect_local_pkg_delete;
+
+        CREATE TRIGGER protect_local_pkg_update
         BEFORE UPDATE ON {TABLE}
         WHEN OLD.from_server = 0 AND NEW.from_server != 0
         BEGIN SELECT RAISE(IGNORE); END;
 
-        CREATE TRIGGER IF NOT EXISTS protect_local_pkg_insert
+        CREATE TRIGGER protect_local_pkg_insert
         BEFORE INSERT ON {TABLE}
         WHEN NEW.from_server != 0
-         AND EXISTS (SELECT 1 FROM {TABLE}
-             WHERE package_name = NEW.package_name AND from_server = 0)
         BEGIN SELECT RAISE(IGNORE); END;
 
-        CREATE TRIGGER IF NOT EXISTS protect_local_pkg_delete
+        CREATE TRIGGER protect_local_pkg_delete
         BEFORE DELETE ON {TABLE}
         WHEN OLD.from_server = 0
         BEGIN SELECT RAISE(IGNORE); END;
+
+        COMMIT;
         "#
     ))?;
     Ok(())
@@ -253,14 +307,11 @@ fn cmd_read(pkg: &str, out: Option<&str>) -> Result<()> {
     bail!("未找到包名: {}", pkg)
 }
 
-/// 单库写入: UPDATE/INSERT 二选一 (inject.rs 同款) + from_server=0 + 回读验证
-fn write_one(db: &str, pkg: &str, obj: &serde_json::Map<String, Value>) -> Result<()> {
-    let conn = Connection::open(db)?;
-    let cols = load_cols(&conn)?;
-    let pc = real_col(&cols, "package_name")
-        .context("缺少 package_name 列")?
-        .to_string();
-    let fsc = real_col(&cols, "from_server").map(|s| s.to_string());
+/// 单行写入 (连接与表结构由调用方复用): UPDATE/INSERT 二选一 + from_server=0 + 回读验证。
+/// 保护触发器与 WAL 收尾不放这里 —— 调用方每条命令只做一次, 不按包重复。
+fn write_one(conn: &Connection, ti: &TableInfo, pkg: &str, obj: &serde_json::Map<String, Value>) -> Result<()> {
+    let pc = &ti.pc;
+    let fsc = &ti.fc;
 
     let exists: i64 = conn.query_row(
         &format!("SELECT COUNT(*) FROM {} WHERE \"{}\" = ?1", TABLE, pc),
@@ -272,11 +323,11 @@ fn write_one(db: &str, pkg: &str, obj: &serde_json::Map<String, Value>) -> Resul
     let mut skipped: Vec<String> = Vec::new();
     let mut sets: Vec<(String, Option<String>)> = Vec::new();
     for (k, v) in obj {
-        if k.eq_ignore_ascii_case(&pc) { continue; }
-        if let Some(fc) = &fsc {
+        if k.eq_ignore_ascii_case(pc) { continue; }
+        if let Some(fc) = fsc {
             if k.eq_ignore_ascii_case(fc) { continue; }
         }
-        let Some(actual) = real_col(&cols, k) else {
+        let Some(actual) = real_col(&ti.cols, k) else {
             skipped.push(k.clone());
             continue;
         };
@@ -293,22 +344,9 @@ fn write_one(db: &str, pkg: &str, obj: &serde_json::Map<String, Value>) -> Resul
     if exists == 0 {
         let mut ins_cols = vec![format!("\"{}\"", pc)];
         let mut ins_vals = vec![format!("'{}'", pkg.replace('\'', "''"))];
-        for (name, ty) in &cols {
-            if name.eq_ignore_ascii_case(&pc) { continue; }
-            let info: (i64, Option<String>) = conn.query_row(
-                &format!(
-                    "SELECT \"notnull\", dflt_value FROM pragma_table_info('{}') WHERE lower(name) = lower(?1)",
-                    TABLE
-                ),
-                [name],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )?;
-            if info.0 == 1 && info.1.is_none() {
-                let up = ty.to_uppercase();
-                let v = if up.contains("INT") || up.contains("REAL") || up.contains("NUM") { "0" } else { "''" };
-                ins_cols.push(format!("\"{}\"", name));
-                ins_vals.push(v.to_string());
-            }
+        for (name, numeric) in &ti.notnull {
+            ins_cols.push(format!("\"{}\"", name));
+            ins_vals.push(if *numeric { "0".to_string() } else { "''".to_string() });
         }
         conn.execute(
             &format!(
@@ -347,12 +385,32 @@ fn write_one(db: &str, pkg: &str, obj: &serde_json::Map<String, Value>) -> Resul
             .with_context(|| format!("写入 {} 失败", pkg))?;
     }
 
-    // ── 3) from_server 强制 0 (本地配置标记, 配合三联触发器)
-    if let Some(fc) = &fsc {
+    // ── 3) from_server 强制 0 (本地配置标记, 配合三联触发器) + 清除服务器下发的同名行
+    //     新触发器拦的是"以后"的服务器插入, 这里清的是历史遗留:
+    //     同包名同时存在本地行与服务器行时, 应用可能优先读服务器行, 我们注入的等于没生效
+    if let Some(fc) = fsc {
+        // 输入 JSON 自带 from_server (从库里读出来的云端行会是 1) → 说清它被改写, 免得以为注入的是云端值
+        if let Some(v) = obj.iter().find(|(k, _)| k.eq_ignore_ascii_case(fc)).map(|(_, v)| v) {
+            let nonzero = match v {
+                Value::Null => false,
+                Value::Number(n) => n.as_i64().map_or(true, |x| x != 0),
+                Value::String(s) => { let t = s.trim(); !t.is_empty() && t != "0" }
+                _ => true,
+            };
+            if nonzero { outln!("输入 from_server={} 已强制写成 0 (注入一律落本地行)", v); }
+        }
         conn.execute(
             &format!("UPDATE {} SET \"{}\" = 0 WHERE \"{}\" = ?1", TABLE, fc, pc),
             [pkg],
         )?;
+        // 删的是 from_server!=0 的行 → 不触发 protect_local_pkg_delete (它只护 from_server=0)
+        let purged = conn.execute(
+            &format!("DELETE FROM {} WHERE \"{}\" = ?1 AND \"{}\" != 0", TABLE, pc, fc),
+            [pkg],
+        )?;
+        if purged > 0 {
+            outln!("已清除服务器下发的同名配置行: {} 个 ({})", purged, pkg);
+        }
     }
 
     // 回读验证 (inject.rs/ORC 同款)
@@ -362,9 +420,6 @@ fn write_one(db: &str, pkg: &str, obj: &serde_json::Map<String, Value>) -> Resul
         |r| r.get(0),
     )?;
     if after == 0 { bail!("写入后未找到包名: {}", pkg); }
-
-    install_protection(&conn)?;
-    finish_db(db);
 
     if !skipped.is_empty() {
         errln!("已忽略未知字段: {}", skipped.join(", "));
@@ -383,8 +438,12 @@ fn cmd_write(pkg: &str, json_path: &str) -> Result<()> {
     let dbs = db_paths();
     if dbs.is_empty() { bail!("未找到数据库"); }
     for db in &dbs {
-        write_one(db, pkg, obj)
+        let conn = Connection::open(db)?;
+        let ti = TableInfo::load(&conn)?;
+        write_one(&conn, &ti, pkg, obj)
             .with_context(|| format!("写入 {} (@{})", pkg, db))?;
+        install_protection(&conn)?;
+        finish_db(db);
     }
     outln!("{} 配置写入成功", pkg);
     Ok(())
@@ -438,12 +497,18 @@ fn cmd_sync(dir: Option<&str>) -> Result<()> {
 
     for db in &dbs {
         outln!("处理数据库: {}", db);
+        let conn = Connection::open(db)?;
+        let ti = TableInfo::load(&conn)?;
         for (pkg, obj) in &json_data {
-            match write_one(db, pkg, obj) {
+            match write_one(&conn, &ti, pkg, obj) {
                 Ok(()) => outln!("OK: {}", pkg),
                 Err(e) => { errln!("FAIL: {} ({})", pkg, e); bad += 1; }
             }
         }
+        // 保护触发器与 WAL 收尾每条命令只做一次: 原来写在 write_one 里 → N 个包就 N 轮
+        // DDL + N 次 checkpoint(TRUNCATE) + N 次 sidecar chown (WAL 反复重写, 白写闪存)
+        install_protection(&conn)?;
+        finish_db(db);
     }
     outln!("注入完成. 共 {} 个, 失败 {}", json_data.len(), bad);
     if bad > 0 && bad >= json_data.len() { bail!("全部失败"); }
@@ -456,8 +521,8 @@ fn cmd_delete(pkg: &str) -> Result<()> {
     if dbs.is_empty() { bail!("未找到数据库"); }
     for db in &dbs {
         let conn = Connection::open(db)?;
-        let cols = load_cols(&conn)?;
-        let pc = real_col(&cols, "package_name").context("缺少 package_name 列")?.to_string();
+        let ti = TableInfo::load(&conn)?;
+        let pc = &ti.pc;
         conn.execute_batch("DROP TRIGGER IF EXISTS protect_local_pkg_delete;")?;
         conn.execute(&format!("DELETE FROM {} WHERE \"{}\" = ?1", TABLE, pc), [pkg])?;
         install_protection(&conn)?;
@@ -495,8 +560,157 @@ fn cmd_unprotect() -> Result<()> {
     Ok(())
 }
 
+/// localize <目录>: 注入收尾 —— 保证目录内每个包 (含 *.json 与 *.enc) 的行都是
+/// from_server=0 (本地行), 校验行到底有没有落库, 并重新武装三联保护。
+/// 兜底注入用的 bin/inject 写的是服务器标记行, 而且它自己会装一套旧版弱触发器 —— 全靠这一步扳回来。
+fn cmd_localize(dir: &str) -> Result<()> {
+    let cccf = Path::new(dir);
+    if !cccf.is_dir() { bail!("cccf 目录不存在: {}", dir); }
+
+    let mut pkgs: BTreeSet<String> = BTreeSet::new();
+    for entry in fs::read_dir(cccf).context("无法读取 cccf 目录")? {
+        let path = entry?.path();
+        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+        if ext != "json" && ext != "enc" { continue; }
+        pkgs.insert(path.file_stem().unwrap().to_string_lossy().to_string());
+    }
+    if pkgs.is_empty() { bail!("目录内没有 .json/.enc: {}", dir); }
+
+    // 拿不到已安装列表时不对"库里没有行"报警 (否则会刷屏)
+    let installed = installed_pkgs();
+    let is_installed = |p: &str| match &installed {
+        Some(v) => v.iter().any(|x| x == &p.to_ascii_lowercase()),
+        None => false,
+    };
+
+    let dbs = db_paths();
+    if dbs.is_empty() { bail!("未找到数据库"); }
+    for db in &dbs {
+        let conn = Connection::open(db)?;
+        let ti = TableInfo::load(&conn)?;
+        let pc = &ti.pc;
+        let Some(fc) = ti.fc.as_deref() else {
+            errln!("该库没有 from_server 列, 无法保证本地标记");
+            continue;
+        };
+        let mut fixed = 0usize;
+        let mut missing: Vec<&String> = Vec::new();
+        let mut left: Vec<&String> = Vec::new();
+        for pkg in &pkgs {
+            fixed += conn.execute(
+                &format!(
+                    "UPDATE {} SET \"{}\" = 0 WHERE \"{}\" = ?1 AND \"{}\" != 0",
+                    TABLE, fc, pc, fc
+                ),
+                [pkg.as_str()],
+            )?;
+            let (rows, nonzero): (i64, i64) = conn.query_row(
+                &format!(
+                    "SELECT COUNT(*), COALESCE(SUM(CASE WHEN \"{}\" != 0 THEN 1 ELSE 0 END), 0) FROM {} WHERE \"{}\" = ?1",
+                    fc, TABLE, pc
+                ),
+                [pkg.as_str()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            if rows == 0 {
+                if is_installed(pkg) { missing.push(pkg); }
+            } else if nonzero > 0 {
+                left.push(pkg);
+            }
+        }
+        install_protection(&conn)?;
+        finish_db(db);
+        outln!("已标回本地 (from_server=0): {} 行 / 包 {} 个", fixed, pkgs.len());
+        if !missing.is_empty() {
+            errln!(
+                "警告: 已安装但库里没有行 (注入未生效): {}",
+                missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            );
+        }
+        if !left.is_empty() {
+            errln!(
+                "警告: 仍有服务器标记行: {}",
+                left.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            );
+        }
+    }
+    outln!("保护已重新武装");
+    Ok(())
+}
+
+/// diag: 诊断 —— 触发器现状 / 本地·服务器行数 / 同名冲突 / "服务器行能不能插进来"自检。
+/// 自检在事务里插一行 from_server=1 再回滚 (不留痕): 被触发器整行跳过才算拦下。
+fn cmd_diag() -> Result<()> {
+    let dbs = db_paths();
+    if dbs.is_empty() { bail!("未找到数据库"); }
+    for db in &dbs {
+        let conn = Connection::open(db)?;
+        let ti = TableInfo::load(&conn)?;
+        let pc = &ti.pc;
+        outln!("数据库: {}", db);
+
+        let mut st = conn.prepare(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?1 ORDER BY name",
+        )?;
+        let rows = st.query_map([TABLE], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)))?;
+        let mut n_trig = 0;
+        for r in rows {
+            let (name, sql) = r?;
+            n_trig += 1;
+            let one = sql.unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ");
+            outln!("  触发器 {}: {}", name, one);
+        }
+        drop(st);
+        if n_trig == 0 { outln!("  触发器: 无 (保护未武装)"); }
+
+        let total: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM {}", TABLE), [], |r| r.get(0))?;
+        outln!("  配置行总数: {}", total);
+
+        let Some(fc) = ti.fc.as_deref() else {
+            outln!("  该库没有 from_server 列, 跳过行数统计与自检");
+            continue;
+        };
+        let server: i64 = conn.query_row(
+            &format!("SELECT COUNT(*) FROM {} WHERE \"{}\" != 0", TABLE, fc),
+            [],
+            |r| r.get(0),
+        )?;
+        outln!("  本地行 (from_server=0): {}   服务器行 (!=0): {}", total - server, server);
+        let dup: i64 = conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM {0} WHERE \"{1}\" != 0 AND \"{2}\" IN (SELECT \"{2}\" FROM {0} WHERE \"{1}\" = 0)",
+                TABLE, fc, pc
+            ),
+            [],
+            |r| r.get(0),
+        )?;
+        outln!("  同名冲突 (同包名既有本地行又有服务器行): {}", dup);
+
+        conn.execute_batch("BEGIN;")?;
+        let ins = conn.execute(
+            &format!(
+                "INSERT INTO {} (\"{}\", \"{}\") VALUES ('turbo.diag.selfcheck', 1)",
+                TABLE, pc, fc
+            ),
+            [],
+        );
+        let landed: i64 = conn.query_row(
+            &format!("SELECT COUNT(*) FROM {} WHERE \"{}\" = 'turbo.diag.selfcheck'", TABLE, pc),
+            [],
+            |r| r.get(0),
+        )?;
+        conn.execute_batch("ROLLBACK;")?;
+        match ins {
+            Ok(_) if landed == 0 => outln!("  自检: 服务器行注入被拦下 OK"),
+            Ok(_) => outln!("  自检: 服务器行注入未被拦下 FAIL (进了 {} 行)", landed),
+            Err(e) => outln!("  自检: 插入未被触发器跳过 (走到约束检查: {}), 视为未拦下", e),
+        }
+    }
+    Ok(())
+}
+
 fn usage() -> &'static str {
-    "用法: cosa check|list|read <包名> [输出文件]|write <包名> <json文件>|delete <包名>|sync [目录]|protect|unprotect"
+    "用法: cosa check|list|read <包名> [输出文件]|write <包名> <json文件>|delete <包名>|sync [目录]|localize <目录>|protect|unprotect|diag"
 }
 
 fn main() -> std::process::ExitCode {
@@ -517,8 +731,13 @@ fn main() -> std::process::ExitCode {
             _ => Err(anyhow::anyhow!(usage())),
         },
         Some("sync") => cmd_sync(args.get(2).map(String::as_str)),
+        Some("localize") => match args.get(2) {
+            Some(d) => cmd_localize(d),
+            _ => Err(anyhow::anyhow!(usage())),
+        },
         Some("protect") => cmd_protect(),
         Some("unprotect") => cmd_unprotect(),
+        Some("diag") => cmd_diag(),
         Some("version") => { outln!("cosa 2.0 (rust)"); Ok(()) }
         _ => Err(anyhow::anyhow!(usage())),
     };

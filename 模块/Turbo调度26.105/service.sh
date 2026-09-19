@@ -76,11 +76,15 @@ if [ -f "$SCRC_DIR/sc_installed" ]; then
   fi
 
   log "[Scene] 加固 executor 权限"
-  sed -i 's/chmod 755 "$script_path"/chmod 777 "$script_path"/g' "$VT_FILES/kr-script/executor.sh" 2>/dev/null
-  chmod 555 "$VT_FILES/kr-script/executor.sh" 2>/dev/null
-  chmod 777 "$VT_FILES/kr-script/cache" 2>/dev/null
-  find "$VT_FILES/kr-script/cache" -type f -exec chmod 777 {} + 2>/dev/null
-  find "$VT_FILES/kr-script/cache" -type d -exec chmod 777 {} + 2>/dev/null
+  # 只在真的不一致时才动: sed -i 会重写文件, chmod 同值也会更新 ctime —— 每开机无谓地摸一遍
+  # 整棵缓存树的元数据既费时, 又是"无谓文件事件触发 Scene 热加载"的老坑
+  if grep -q 'chmod 755 "$script_path"' "$VT_FILES/kr-script/executor.sh" 2>/dev/null; then
+    sed -i 's/chmod 755 "$script_path"/chmod 777 "$script_path"/g' "$VT_FILES/kr-script/executor.sh" 2>/dev/null
+  fi
+  perm_is "$VT_FILES/kr-script/executor.sh" "555" || chmod 555 "$VT_FILES/kr-script/executor.sh" 2>/dev/null
+  perm_is "$VT_FILES/kr-script/cache" "777" || chmod 777 "$VT_FILES/kr-script/cache" 2>/dev/null
+  find "$VT_FILES/kr-script/cache" -type f -not -perm -777 -exec chmod 777 {} + 2>/dev/null
+  find "$VT_FILES/kr-script/cache" -type d -not -perm -777 -exec chmod 777 {} + 2>/dev/null
 
   log "[Scene] 初始化完成"
 fi
