@@ -187,8 +187,7 @@ ask_cloud_only() {
 }
 
 install_mode() {
-  # 清空"沿用"标记; 只有用户选择沿用时才会重新写入 (供 customize.sh 判断是否询问 APK)
-  rm -f "$SCRC_DIR/sc_kept"
+  # (旧版此处维护 sc_kept 标记供"是否安装破坏神磁贴APK"判断, 该功能已移除, 标记不再需要)
 
   if [ ! -d "$VT_FILES" ]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -231,7 +230,6 @@ install_mode() {
     if [ "$key" = "KEY_VOLUMEUP" ]; then
       echo "  + 沿用之前的选项 (二改调度=${prev_type:-未启用}, 云控注入=$([ "$prev_cloud" = "1" ] && echo 已启用 || echo 未启用))"
       log "沿用之前的选项: 二改调度=${prev_type:-none}, 云控=${prev_cloud}"
-      touch "$SCRC_DIR/sc_kept"
       if [ -n "$prev_type" ]; then
         create_backup
         deploy_config "$prev_type" || return 1

@@ -32,14 +32,15 @@ else
   rm -f /data/adb/service.d/.turbo_restore.sh 2>/dev/null
 fi
 
-# ── 旧版破坏神磁贴 APK 残留清理 (v26.103 起模块不再提供; 有则卸掉) ──
+# ── 旧版破坏神磁贴 APK 残留清理 (v26.104 起模块不再提供) ──
+# 标志与磁贴配置无条件清掉 (包可能早就被卸了, 只看包在不在会漏掉残留标志)
 _dev_pkg="com.turbosched.devastator"
+rm -rf "$MODPATH/system/app/Devastator" 2>/dev/null
+rm -f /data/adb/turbo/devastator_on /data/adb/turbo/devastator_restored \
+      /data/adb/turbo/devastator_installed /data/adb/turbo/devastator_params_backup.json 2>/dev/null
 if pm list packages "$_dev_pkg" 2>/dev/null | grep -q "$_dev_pkg"; then
-  ulog "- 清理旧版破坏神残留..."
-  rm -rf "$MODPATH/system/app/Devastator" 2>/dev/null
+  ulog "- 清理旧版破坏神残留 (卸载磁贴 APK)..."
   pm uninstall --user 0 "$_dev_pkg" >/dev/null 2>&1
   command -v ksud >/dev/null 2>&1 && ksud debug set.uninstall "$_dev_pkg" >/dev/null 2>&1
-  rm -rf /data/adb/turbo/devastator_on /data/adb/turbo/devastator_restored \
-         /data/adb/turbo/devastator_params_backup.json 2>/dev/null
 fi
 rm -rf /data/adb/scrc 2>/dev/null

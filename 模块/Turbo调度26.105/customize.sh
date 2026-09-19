@@ -151,9 +151,12 @@ clean_after_install() {
   fi
   # AsoulOpt.zip 已作为子模块刷入, 源文件不再需要
   rm -rf "$MODPATH/modules" 2>/dev/null
-  # 清理旧版破坏神残留 (v26.103 起模块不再提供破坏神磁贴 APK): 磁贴挂载源 + 根目录 APK + 旧脚本
+  # 清理旧版破坏神残留 (v26.104 起模块不再提供磁贴 APK): 磁贴挂载源 + 根目录 APK + 旧脚本
+  # 标志文件无条件清 (磁贴包可能早就被卸载, 只按"包装没装"判断会漏掉 /data/adb/turbo 下的残留标志)
   rm -rf "$MODPATH/devastator" "$MODPATH/system/app/Devastator" 2>/dev/null
   rm -f "$MODPATH/scripts/devastator.sh" "$MODPATH/webroot/devastator-page.js" "$MODPATH/Devastator.apk" 2>/dev/null
+  rm -f "$SCRC_DIR/devastator_on" "$SCRC_DIR/devastator_restored" \
+        "$SCRC_DIR/devastator_installed" "$SCRC_DIR/devastator_params_backup.json" 2>/dev/null
   rmdir "$MODPATH/system/app" "$MODPATH/system" 2>/dev/null
 }
 

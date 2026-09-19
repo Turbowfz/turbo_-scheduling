@@ -64,13 +64,15 @@ uninstall_module() {
 
   rm -rf "$SCRC_DIR"
   rm -rf /data/adb/scrc 2>/dev/null
-  # 旧版破坏神磁贴 APK 残留 (v26.103 起模块不再提供): 有则卸掉, 无则跳过
+  # 旧版破坏神磁贴残留 (v26.104 起模块不再提供): 标志无条件清, 包在的话顺手卸掉
   _dev_pkg="com.turbosched.devastator"
+  rm -rf "$MODDIR/system/app/Devastator" 2>/dev/null
+  rm -f /data/adb/turbo/devastator_on /data/adb/turbo/devastator_restored \
+        /data/adb/turbo/devastator_installed /data/adb/turbo/devastator_params_backup.json 2>/dev/null
   if pm list packages "$_dev_pkg" 2>/dev/null | grep -q "$_dev_pkg"; then
     pm uninstall --user 0 "$_dev_pkg" >/dev/null 2>&1
     command -v ksud >/dev/null 2>&1 && ksud debug set.uninstall "$_dev_pkg" >/dev/null 2>&1
-    rm -rf "$MODDIR/system/app/Devastator" 2>/dev/null
-    echo "- 已清理旧版破坏神残留"
+    echo "- 已卸载旧版破坏神磁贴 APK"
   fi
   # AsoulOpt 子模块 (asoul_affinity_opt) 不自动卸载, 如需移除请手动在 Magisk/KSU 中卸载
   echo "- 提示: AsoulOpt 子模块 (asoul_affinity_opt) 未自动卸载, 如需移除请手动卸载"

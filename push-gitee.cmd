@@ -30,7 +30,7 @@ echo.
 echo [3/5] init local repo and commit
 if not exist ".git" git init
 git add -A
-git commit -m "v26.104"
+git commit -m "v26.105"
 git branch -M master
 echo.
 
@@ -48,7 +48,7 @@ echo ==========================================
 echo  DONE.
 echo   - the module zip in this folder is the update source
 echo   - on your phone: open KernelSU manager, pull to refresh
-echo     it should show v26.104 as available
+echo     it should show v26.105 as available
 echo   - next release: bump version, run  node release.js
 echo     then  git add -A ^&^& git commit -m "vX" ^&^& git tag vX ^&^& git push --tags
 echo ==========================================

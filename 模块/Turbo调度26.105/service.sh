@@ -31,13 +31,19 @@ update_description() {
 }
 update_description
 
-# 等待开机完成 + CE 解锁 (各 300s 上限: 个别 ROM 不设 ce_available 属性)
+# 等待开机完成 + CE 解锁 (数据目录可读)。
+# 注意: 手机重启后一直锁屏时 CE 要到首次解锁才就绪 (sys.user.0.ce_available 之前为 false) —
+# 上限给到 30 分钟, 否则用户"重启就揣兜里"的场景会直接放弃部署与注入, 且本开机不再重试。
 wait_boot_ready() {
   w=0
-  while [ "$(getprop sys.boot_completed)" != "1" ] && [ "$w" -lt 300 ]; do sleep 1; w=$((w + 1)); done
+  while [ "$(getprop sys.boot_completed)" != "1" ] && [ "$w" -lt 600 ]; do sleep 1; w=$((w + 1)); done
   w=0
-  while [ -z "$(getprop sys.user.0.ce_available)" ] && [ "$w" -lt 300 ]; do sleep 2; w=$((w + 2)); done
-  [ "$w" -ge 300 ] && log "[等待] CE解锁属性超时 (300s), 属性缺失的ROM直接放行"
+  while [ "$w" -lt 1800 ]; do
+    [ "$(getprop sys.user.0.ce_available)" = "true" ] && return 0
+    if [ -d "$VT_FILES" ] || [ -d /data/data/com.oplus.cosa ]; then return 0; fi   # 目录可读 = 已解锁
+    sleep 5; w=$((w + 5))
+  done
+  log "[等待] CE解锁超时 (30分钟), 仍继续尝试"
 }
 
 log "========================================="
@@ -88,9 +94,10 @@ if [ -f "$SCRC_DIR/rc_installed" ]; then
     wait_boot_ready
     start_official   # 开机未完成时 start 可能失败, 放在 wait 之后
 
-    # DB 就绪即匹配+注入 (最长等 300s)
-    MAX_WAIT=300
-    WAIT_INTERVAL=5
+    # DB 就绪即匹配+注入 (最长等 30 分钟: 手机重启后一直锁屏时数据库要到解锁后才可读,
+    # 上限太短会静默放弃本次注入; 轮询 10 秒一次, 每 2 分钟记录一条进度避免刷屏)
+    MAX_WAIT=1800
+    WAIT_INTERVAL=10
     elapsed=0
     found=0
 
@@ -109,7 +116,7 @@ if [ -f "$SCRC_DIR/rc_installed" ]; then
       fi
       sleep $WAIT_INTERVAL
       elapsed=$((elapsed + WAIT_INTERVAL))
-      echo "[$(date '+%m-%d %T')] 等待数据库... ${elapsed}s"
+      [ $((elapsed % 120)) -eq 0 ] && echo "[$(date '+%m-%d %T')] 等待数据库 (未解锁时不可读)... ${elapsed}s"
     done
 
     # 仅在真正超时 (未找到数据库) 时输出错误, 注入成功不再误报
