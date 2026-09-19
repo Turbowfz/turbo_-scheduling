@@ -1,3 +1,11 @@
 # 全部文件不做换行转换:
 # 模块里的 .sh / .js 必须是 LF, 否则手机上执行会报错; zip/apk/so 等二进制更不能动。
 * -text
+
+# 例外: 会被管理器/安装器当文本解析的文件钉死 LF ——
+# 之前 Update.md 是 CRLF, release.js 按 \n 切行后每行残留 \r, 生成的 changelog.md 也带 \r;
+# 管理器把更新日志按 Markdown 渲染, 结果条目被并成一整段 (看不到换行)。
+# 注意: 不给 *.json 加规则 —— Scene 配置 (categories.json 等) 现在是 CRLF 但 JSON 解析无视,
+# 加了会把那批内容文件整体改写, 没必要。
+*.md    text eol=lf
+*.prop  text eol=lf

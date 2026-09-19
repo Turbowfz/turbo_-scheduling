@@ -51,7 +51,9 @@ function toVersionCode(ver) {
 
 /* 从 Update.md 取最新版本块作为 changelog */
 function latestChangelog(mdPath) {
-  const lines = fs.readFileSync(mdPath, 'utf8').split('\n');
+  /* 按 /\r?\n/ 切行: Update.md 若是 CRLF (Windows 编辑器写的), 按 \n 切会把 \r 留在每行末尾,
+     生成的 changelog.md 就带 \r, 管理器渲染时整段粘成一坨 (更新日志看不到换行) */
+  const lines = fs.readFileSync(mdPath, 'utf8').split(/\r?\n/);
   const isBlock = l => /^#\d/.test(l.trim());
   const start = lines.findIndex(isBlock);
   if (start < 0) return '# 更新日志\n\n(无)\n';
