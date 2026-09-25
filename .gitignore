@@ -25,3 +25,6 @@ _*
 
 # enc 路径桩测试的临时目录
 tests/.tmp_enc_test/
+
+# 编译用: 从设备 /system/lib64/libsqlite.so 拉取, 不进仓库 (README 构建一节有说明)
+cosa-rs/prebuilt/*.so

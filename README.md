@@ -86,7 +86,17 @@ cargo build --release
 cp target/aarch64-linux-android/release/cosa ../模块/Turbo调度<版本>/bin/cosa
 ```
 
-`cosa` 不启用 rusqlite 的 bundled 特性,而是链接模块自带的 `bin/libsqlite3.so`(3.49.1),并把 rpath 烧成 `/data/adb/modules/Turbo_Scheduling/bin` —— 因此二进制只有约 450KB,且不依赖系统 SQLite。构建所需的 `libsqlite3.so` 与 `sqlite3.h` 放在 `cosa-rs/prebuilt/`。
+`cosa` 不启用 rusqlite 的 bundled 特性,而是链接 SQLite 动态库(rpath 烧成 `/data/adb/modules/Turbo_Scheduling/bin`),所以二进制只有约 470KB。
+
+**运行时**用系统自带的 `/system/lib64/libsqlite.so`:安装器会建 `bin/libsqlite3.so` 符号链接指向它,每次开机自愈,模块不再自带库文件(省 850KB 设备空间 / 465KB 包体)。
+
+**编译时**需要一份 `libsqlite3.so` 作为链接输入,不进仓库 —— 从任意一台 Android 设备拉即可:
+
+```bash
+adb pull /system/lib64/libsqlite.so cosa-rs/prebuilt/libsqlite3.so
+```
+
+`cosa-rs/prebuilt/sqlite3.h` 是编译期生成绑定用的头文件,随仓库提供。
 
 ## 致谢
 
