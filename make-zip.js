@@ -49,8 +49,11 @@ const chunks = [];
 const central = [];
 let offset = 0;
 
+/* 固定时间戳: 用 new Date() 会让每次重打包的字节都不同 —— 同一份源码反复打包会在 git 里
+   堆出一串"大文件改动", 也让 delta 压缩失效。固定成常量后打包可复现 (源码不变则 zip 字节不变),
+   而 zip 时间戳对刷入没有任何影响。 */
 const dosTime = (() => {
-  const d = new Date();
+  const d = new Date(2026, 0, 1, 0, 0, 0);
   return {
     time: (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1),
     date: (((d.getFullYear() - 1980) & 0x7F) << 9) | ((d.getMonth() + 1) << 5) | d.getDate(),
