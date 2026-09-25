@@ -44,16 +44,16 @@ uninstall_module() {
   [ "$(id -u)" -ne 0 ] && { echo "! 需要ROOT权限"; log "错误: 非root"; exit 1; }
 
   # Scene 备份还原 + 校验 + 恢复官方调度 (逻辑收拢在 common.sh restore_scene_now)
-  if [ -f "$SCRC_DIR/sc_installed" ]; then
+  if [ -f "$FLAG_DIR/sc_installed" ]; then
     echo "- 还原Scene配置 (强制切回软件自带调度)..."
     if ! restore_scene_now; then
-      echo "! 还原Scene配置失败 (备份未生效), 已保留 $SCRC_DIR 供手动恢复, 中止卸载"
+      echo "! 还原Scene配置失败 (备份未生效), 已保留 $FLAG_DIR 供手动恢复, 中止卸载"
       log "错误: 还原失败, 已保留备份, 中止卸载"
       exit 1
     fi
   fi
 
-  if [ -f "$SCRC_DIR/rc_installed" ]; then
+  if [ -f "$FLAG_DIR/rc_installed" ]; then
     echo "- 清理云控数据..."
     log "清理云控数据"
     am force-stop com.oplus.cosa 2>/dev/null
@@ -62,7 +62,7 @@ uninstall_module() {
     sleep 2
   fi
 
-  rm -rf "$SCRC_DIR"
+  rm -rf "$FLAG_DIR"
   rm -rf /data/adb/scrc 2>/dev/null
   # 旧版破坏神磁贴残留 (v26.104 起模块不再提供): 标志无条件清, 包在的话顺手卸掉
   _dev_pkg="com.turbosched.devastator"
@@ -101,7 +101,7 @@ echo ""
 log "=== 操作菜单启动 ==="
 
 # ── 云控注入 (第一选项) ──
-if [ -f "$SCRC_DIR/rc_installed" ]; then
+if [ -f "$FLAG_DIR/rc_installed" ]; then
   echo "  [音量+] 注入云控配置"
   echo "  [音量-] 下一选项"
   echo ""

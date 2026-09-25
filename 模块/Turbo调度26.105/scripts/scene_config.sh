@@ -27,7 +27,7 @@ deploy_config() {
     if [ -z "$(ls "$src_dir" 2>/dev/null)" ]; then
       echo "  ! 解压失败: $src_dir"
       echo "  ! 部署失败, 已清除旧的调度标志, 请重新安装模块"
-      rm -f "$SCRC_DIR/sc_installed" "$SCRC_DIR/config_type"
+      rm -f "$FLAG_DIR/sc_installed" "$FLAG_DIR/config_type"
       log "错误: 部署失败, 已清除sc标志"
       return 1
     fi
@@ -42,15 +42,15 @@ deploy_config() {
   echo "  + Scene配置已部署 ($config_type)"
   log "Scene配置已部署: $config_type"
 
-  mkdir -p "$SCRC_DIR"
-  touch "$SCRC_DIR/sc_installed"
-  echo "$config_type" > "$SCRC_DIR/config_type"
+  mkdir -p "$FLAG_DIR"
+  touch "$FLAG_DIR/sc_installed"
+  echo "$config_type" > "$FLAG_DIR/config_type"
 
   return 0
 }
 
 create_backup() {
-  local backup_dir="$SCRC_DIR/backup"
+  local backup_dir="$FLAG_DIR/backup"
   mkdir -p "$backup_dir"
   if [ -z "$(ls "$backup_dir"/*.json 2>/dev/null)" ] && [ -d "$VT_FILES" ]; then
     # 不做 chmod -R: cp -af 原样保留属主/上下文/权限, 还原时一字不差放回
@@ -107,10 +107,10 @@ copy_to_scene() {
     # categories.json (短视频包名): 模块独占, 全程 555 不允许 Scene 写。
     # 有用户镜像 (WebUI 增删时生成) 且 Scene 侧内容漂移 → 以镜像恢复; 首次种子后不再覆盖
     if [ "$name" = "categories.json" ]; then
-      if [ -f "$SCRC_DIR/categories_seeded" ]; then
-        if [ -f "$SCRC_DIR/categories_user.json" ]; then
-          if [ ! -f "$VT_FILES/$name" ] || ! cmp -s "$SCRC_DIR/categories_user.json" "$VT_FILES/$name"; then
-            if deploy_one "$SCRC_DIR/categories_user.json" "$VT_FILES/.turbo_tmp_$name" "$VT_FILES/$name" "555"; then
+      if [ -f "$FLAG_DIR/categories_seeded" ]; then
+        if [ -f "$FLAG_DIR/categories_user.json" ]; then
+          if [ ! -f "$VT_FILES/$name" ] || ! cmp -s "$FLAG_DIR/categories_user.json" "$VT_FILES/$name"; then
+            if deploy_one "$FLAG_DIR/categories_user.json" "$VT_FILES/.turbo_tmp_$name" "$VT_FILES/$name" "555"; then
               count=$((count + 1))
               log "恢复用户短视频包名 (以 categories_user.json 为准)"
             else
@@ -127,9 +127,9 @@ copy_to_scene() {
         continue
       fi
       # 首次: 从 CONFIG_DIR 取源强制覆盖, 并写入首次标识 (555: Scene 不可写, root 的 WebUI 不受限)
-      mkdir -p "$SCRC_DIR" 2>/dev/null
+      mkdir -p "$FLAG_DIR" 2>/dev/null
       if deploy_one "$CONFIG_DIR/$name" "$VT_FILES/.turbo_tmp_$name" "$VT_FILES/$name" "555"; then
-        touch "$SCRC_DIR/categories_seeded" 2>/dev/null
+        touch "$FLAG_DIR/categories_seeded" 2>/dev/null
         count=$((count + 1))
         log "首次覆盖: $name (已写入首次标识)"
       else
@@ -163,10 +163,10 @@ ask_cloud_only() {
   if [ "$key" = "KEY_VOLUMEUP" ]; then
     sh "$SCRIPTS_DIR/cloud_ctrl.sh" setup "$MODPATH"
   elif [ "$key" = "KEY_VOLUMEDOWN" ]; then
-    rm -f "$SCRC_DIR/rc_installed"
+    rm -f "$FLAG_DIR/rc_installed"
     echo "  - 已跳过"
     log "跳过云控注入"
-  elif [ -f "$SCRC_DIR/rc_installed" ]; then
+  elif [ -f "$FLAG_DIR/rc_installed" ]; then
     # 超时: 之前已启用则保持启用 (无人值守刷入不静默关闭云控)
     echo "  + 无操作, 沿用已启用的云控注入"
     log "超时沿用云控注入"
@@ -192,9 +192,9 @@ install_mode() {
 
   # 更新安装: 读取上次的启用状态 (二改调度 / 云控注入; 任一存在即提供"沿用")
   prev_type=""
-  [ -f "$SCRC_DIR/sc_installed" ] && prev_type=$(cat "$SCRC_DIR/config_type" 2>/dev/null)
+  [ -f "$FLAG_DIR/sc_installed" ] && prev_type=$(cat "$FLAG_DIR/config_type" 2>/dev/null)
   prev_cloud=0
-  [ -f "$SCRC_DIR/rc_installed" ] && prev_cloud=1
+  [ -f "$FLAG_DIR/rc_installed" ] && prev_cloud=1
   if [ -n "$prev_type" ] || [ "$prev_cloud" = "1" ]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  检测到已安装 Turbo 调度"
@@ -225,14 +225,14 @@ install_mode() {
         deploy_config "$prev_type" || return 1
       else
         # 之前没开二改: 清掉残留标记, 不部署也不动 Scene 配置
-        rm -f "$SCRC_DIR/sc_installed" "$SCRC_DIR/config_type"
+        rm -f "$FLAG_DIR/sc_installed" "$FLAG_DIR/config_type"
       fi
       if [ "$prev_cloud" = "1" ]; then
         echo "  + 云控注入: 沿用已启用"
         log "沿用云控注入"
         sh "$SCRIPTS_DIR/cloud_ctrl.sh" setup "$MODPATH" "${prev_type:-oplus}"
       else
-        rm -f "$SCRC_DIR/rc_installed"
+        rm -f "$FLAG_DIR/rc_installed"
       fi
       return 0
     fi
@@ -250,7 +250,7 @@ install_mode() {
   key=$(wait_key 30)
   if [ "$key" != "KEY_VOLUMEUP" ]; then
     echo "  - 已跳过二改调度"
-    rm -f "$SCRC_DIR/sc_installed" "$SCRC_DIR/config_type"
+    rm -f "$FLAG_DIR/sc_installed" "$FLAG_DIR/config_type"
     log "用户跳过二改调度"
     # 从通用版改回跳过时, 必须把 stop_official 关掉的 persist 属性拉回来:
     # persist.* 跨重启保留, 不还原会让官方风驰/horae 一直停摆且无人恢复
@@ -275,7 +275,7 @@ install_mode() {
       echo "  二改调度使用通用版 (不可搭配云控注入)"
       echo "  如需云控注入, 请跳过二改调度后单独开启"
       echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
-      rm -f "$SCRC_DIR/rc_installed"
+      rm -f "$FLAG_DIR/rc_installed"
       deploy_config "generic" || return 1
       log "oplus版配置暂缺 ($soc_dir): 自动通用版"
       sh "$SCRIPTS_DIR/asoul_install.sh" "$MODPATH"
@@ -313,11 +313,11 @@ install_mode() {
       if [ "$key" = "KEY_VOLUMEUP" ]; then
         sh "$SCRIPTS_DIR/cloud_ctrl.sh" setup "$MODPATH" "oplus"
       elif [ "$key" = "KEY_VOLUMEDOWN" ]; then
-        rm -f "$SCRC_DIR/rc_installed"
+        rm -f "$FLAG_DIR/rc_installed"
         echo "  - 已跳过云控注入"
         echo "  ! 注意: 需保证官方调度组件完整方可生效"
         log "oplus版, 用户跳过云控注入"
-      elif [ -f "$SCRC_DIR/rc_installed" ]; then
+      elif [ -f "$FLAG_DIR/rc_installed" ]; then
         # 超时: 之前已启用则保持启用 (无人值守刷入不静默关闭云控)
         echo "  + 无操作, 沿用已启用的云控注入"
         log "oplus版, 超时沿用云控注入"
@@ -327,14 +327,14 @@ install_mode() {
       fi
     else
       echo "  + 已选择: 通用版"
-      rm -f "$SCRC_DIR/rc_installed"
+      rm -f "$FLAG_DIR/rc_installed"
       deploy_config "generic" || return 1
       log "通用版, 询问AsoulOpt"
       sh "$SCRIPTS_DIR/asoul_install.sh" "$MODPATH"
     fi
   else
     echo "  - 当前设备不支持风驰，自动选择通用版"
-    rm -f "$SCRC_DIR/rc_installed"
+    rm -f "$FLAG_DIR/rc_installed"
     deploy_config "generic" || return 1
     log "非oplus设备, 自动通用版"
     sh "$SCRIPTS_DIR/asoul_install.sh" "$MODPATH"

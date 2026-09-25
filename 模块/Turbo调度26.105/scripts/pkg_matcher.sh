@@ -46,12 +46,12 @@ fi
 rule_pkgs_sorted=$(for t in $rule_pkgs; do echo "$t"; done | awk '{print length, $0}' | sort -rn | sed 's/^[0-9]* //')
 log "加载规则模板: $rule_count 个"
 
-# 白名单兜底 (变体匹配未命中时生效); 来源: 9400云控修改 EXTRA_MAP, 用户可编辑 scripts/whitelist.conf
+# 白名单兜底 (变体匹配未命中时生效): 渠道服包名 → 官服模板, 用户可编辑 scripts/whitelist.conf
 WL_CONF="${0%/*}/whitelist.conf"
 if [ -f "$WL_CONF" ]; then
   WHITELIST_MAP=$(grep -v '^#' "$WL_CONF" 2>/dev/null | grep -v '^[[:space:]]*$')
 fi
-# 内置兜底 (whitelist.conf 缺失时使用): 与 9400云控修改 auto.sh EXTRA_MAP 保持一致
+# 内置兜底 (whitelist.conf 缺失时使用)
 [ -z "$WHITELIST_MAP" ] && WHITELIST_MAP="\
 com.miHoYo.yuanshencb:com.miHoYo.Yuanshen \
 com.miHoYo.GenshinImpact:com.miHoYo.Yuanshen \

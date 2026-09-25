@@ -72,11 +72,8 @@ inject_configs() {
   }
   [ "$enc_count" -gt 0 ] && load_installed
 
-  # 注入器执行: 成功=退出码0且无Error; "未获取到第三方应用"重试; 其余错误快速失败。
-  # 保护只在真正调注入器的那一瞬间撤掉 (它要插行, 我们的 insert 触发器会拦), 进程一返回立刻重新武装 ——
-  # 否则重试等待期间库是裸的, 云端可以趁机把服务器行插进来。
-  # 重试用递进间隔 (5/10/20/30/30 秒, 合计最多 95 秒) 而不是固定 30 秒×5 (最长 150 秒):
-  # "未获取到第三方应用"只出现在包服务刚起来的时候, 多数情况几秒内就恢复
+  # 注入器执行: 成功=退出码0且输出无错误迹象; "未获取到第三方应用"按递进间隔重试 (5/10/20/30/30 秒, 最多 95 秒); 其余错误快速失败。
+  # 保护只在真正调注入器那一瞬间撤掉 (它要插行, 会被我们的 insert 触发器拦), 进程一返回立刻重新武装, 不留裸奔窗口
   run_inject() {
     local tries=0
     local out=""
@@ -160,10 +157,9 @@ inject_configs() {
       done
       echo ""
       echo "── 注入 .enc ($enc_pick 个):$enc_list ──"
-      # 参考项目 SCRC 的做法: 跑之前清掉可能卡住的残留注入器 (上次注入中途死掉会留下它)
+      # 跑之前清掉可能卡住的残留注入器 (上次注入中途死掉会留下它)
       pkill -f "$INJECT" 2>/dev/null
-      # 注入器 (第三方闭源) 写的是 from_server=1 的服务器行, 且它自己会装一套旧版弱触发器 →
-      # 注入成功后必须立刻 localize: 标回 from_server=0 + 校验落库 + 重装我们的新语义触发器
+      # 注入器写的是服务器标记行且自带一套旧触发器 → 成功后立刻 localize: 标回 from_server=0 + 校验 + 重装触发器
       if run_inject; then
         LD_LIBRARY_PATH="$MODPATH/bin" "$MODPATH/bin/cosa" localize "$CCCF_DIR" 2>&1 | sed 's/^/  /'
         log "enc 注入完成 ($enc_pick 个, 已标回本地)"
@@ -204,7 +200,7 @@ setup_mode() {
   if ! is_oplus; then
     echo "  ! 未检测到 scx/hmbird 调速器"
     echo "    云控注入需要风驰游戏内核或 GKI 内核支持"
-    rm -f "$SCRC_DIR/rc_installed"
+    rm -f "$FLAG_DIR/rc_installed"
     log "错误: 缺少 scx/hmbird 调速器, 安装中止"
     return 1
   fi
@@ -227,7 +223,7 @@ setup_mode() {
     echo "    请确保:"
     echo "    1. 已启用游戏助手和应用增强服务"
     echo "    2. 至少打开过一次游戏中心"
-    rm -f "$SCRC_DIR/rc_installed"
+    rm -f "$FLAG_DIR/rc_installed"
     log "错误: 未找到DB, 安装失败"
     return 1
   fi
@@ -236,8 +232,8 @@ setup_mode() {
   echo "  + 数据库已就绪 ($DB_SIZE)"
   log "数据库就绪: $DB ($DB_SIZE)"
 
-  mkdir -p "$SCRC_DIR"
-  touch "$SCRC_DIR/rc_installed"
+  mkdir -p "$FLAG_DIR"
+  touch "$FLAG_DIR/rc_installed"
 
   start_official
   enable_cosa_services

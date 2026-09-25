@@ -11,7 +11,7 @@ LATESTARTSERVICE=true
 
 SCRIPTS_DIR="$MODPATH/scripts"
 # 显式定义: update_description 等不再依赖 common.sh 的 source 顺序
-SCRC_DIR="/data/adb/turbo"
+FLAG_DIR="/data/adb/turbo"
 
 ui_print() {
   echo "$1"
@@ -72,12 +72,12 @@ validate_soc() {
 
 update_description() {
   local desc
-  if [ -f "$SCRC_DIR/rc_installed" ] && [ -f "$SCRC_DIR/sc_installed" ]; then
-    desc="云控注入 + 二改调度($(cat "$SCRC_DIR/config_type" 2>/dev/null))"
-  elif [ -f "$SCRC_DIR/rc_installed" ]; then
+  if [ -f "$FLAG_DIR/rc_installed" ] && [ -f "$FLAG_DIR/sc_installed" ]; then
+    desc="云控注入 + 二改调度($(cat "$FLAG_DIR/config_type" 2>/dev/null))"
+  elif [ -f "$FLAG_DIR/rc_installed" ]; then
     desc="云控注入"
-  elif [ -f "$SCRC_DIR/sc_installed" ]; then
-    desc="二改调度($(cat "$SCRC_DIR/config_type" 2>/dev/null))"
+  elif [ -f "$FLAG_DIR/sc_installed" ]; then
+    desc="二改调度($(cat "$FLAG_DIR/config_type" 2>/dev/null))"
   else
     desc="无任何功能，建议卸载"
   fi
@@ -85,7 +85,7 @@ update_description() {
 }
 
 clean_after_install() {
-  if [ -f "$SCRC_DIR/rc_installed" ]; then
+  if [ -f "$FLAG_DIR/rc_installed" ]; then
     # 仅部署本机型模板 (旧版全机型混拷会互相覆盖); 现有 cccf 先备份 (每文件保留10份)
     if [ -d "$MODPATH/cccf" ] && [ -n "$(ls "$MODPATH/cccf"/*.json 2>/dev/null)" ]; then
       ts=$(date +%Y%m%d_%H%M%S)
@@ -131,8 +131,8 @@ clean_after_install() {
   # v26.102 起数据库操作全走 cosa, bin/sqlite3 (1.36MB) 已不再提供 —— 覆盖安装时若模块目录
   # 不是整目录替换, 这个死文件会一直留着, 顺手清掉
   rm -f "$MODPATH/bin/sqlite3" 2>/dev/null
-  rm -f "$SCRC_DIR/devastator_on" "$SCRC_DIR/devastator_restored" \
-        "$SCRC_DIR/devastator_installed" "$SCRC_DIR/devastator_params_backup.json" 2>/dev/null
+  rm -f "$FLAG_DIR/devastator_on" "$FLAG_DIR/devastator_restored" \
+        "$FLAG_DIR/devastator_installed" "$FLAG_DIR/devastator_params_backup.json" 2>/dev/null
   rmdir "$MODPATH/system/app" "$MODPATH/system" 2>/dev/null
 }
 
@@ -170,9 +170,8 @@ set_permissions() {
   [ -f "$MODPATH/bin/cosa" ] && chmod 755 "$MODPATH/bin/cosa" 2>/dev/null
 }
 
-# cosa 需要 SQLite 库。模块不再自带 (省 850KB 设备空间 / 465KB 包体), 改用系统自带的
-# /system/lib64/libsqlite.so —— 参考项目 SCRC 就是这么做的 (它的注入器只 dlopen 系统库, 不带库文件)。
-# 这里建一个 libsqlite3.so 符号链接让 cosa 的 DT_NEEDED 能解析到系统库, 并当场自检一次。
+# cosa 需要 SQLite 库: 模块不自带 (省 850KB 设备空间 / 465KB 包体), 用系统的 /system/lib64/libsqlite.so。
+# 这里建 libsqlite3.so 符号链接让 cosa 的 DT_NEEDED 能解析到它, 并当场自检一次。
 link_system_sqlite() {
   local sys_lib="/system/lib64/libsqlite.so"
   [ -f "$sys_lib" ] || {

@@ -1,6 +1,6 @@
 /* ── 云控页 · 数据 IO 层 (cosa 工具版) ──
    依赖 core.js (MODDIR/CCCF/execStdout/execFull/writeFileChecked/toB64/escapeHTML)
-   DB 操作全部走 bin/cosa (Rust 工具, 单命令子接口): cosa list / read <包> / write <包> <json文件> / delete <包> / sync / protect / unprotect
+   DB 操作全部走 bin/cosa (Rust 工具, 单命令子接口): check / list / list-cloud / read / read-cloud / write / delete / sync / localize / protect / unprotect / diag
    WebUI 只发单命令, 无 SQL 命令行参数/无复合命令/无引号转义 —— 免疫宿主 exec 怪癖 */
 
 /* ═══ cosa 子命令调用 (单命令) ═══ */

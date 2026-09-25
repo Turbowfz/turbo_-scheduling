@@ -13,7 +13,7 @@ log_reset "$LOG_DIR"
 
 # ── bin 执行位自愈 (个别安装器环境 chmod 不残留, 缺执行位时 root 也无法 exec) ──
 chmod 777 "$MODDIR/bin/inject" 2>/dev/null; chmod 755 "$MODDIR/bin/cosa" 2>/dev/null
-# ── SQLite 库自愈: 模块不再自带库, 用系统的 /system/lib64/libsqlite.so (参考项目 SCRC 的做法) ──
+# ── SQLite 库自愈: 用系统的 /system/lib64/libsqlite.so, 链接丢了就补上 ──
 # 符号链接丢了就补上, 否则 cosa 连启动都起不来 (覆盖安装/模块目录被重建时可能丢)
 [ -e "$MODDIR/bin/libsqlite3.so" ] || ln -sf /system/lib64/libsqlite.so "$MODDIR/bin/libsqlite3.so" 2>/dev/null
 
@@ -21,12 +21,12 @@ chmod 777 "$MODDIR/bin/inject" 2>/dev/null; chmod 755 "$MODDIR/bin/cosa" 2>/dev/
 #    module.prop 覆盖 (永远显示"重启后生效")。每次开机按标志文件刷新一次 ──
 update_description() {
   local desc
-  if [ -f "$SCRC_DIR/rc_installed" ] && [ -f "$SCRC_DIR/sc_installed" ]; then
-    desc="云控注入 + 二改调度($(cat "$SCRC_DIR/config_type" 2>/dev/null))"
-  elif [ -f "$SCRC_DIR/rc_installed" ]; then
+  if [ -f "$FLAG_DIR/rc_installed" ] && [ -f "$FLAG_DIR/sc_installed" ]; then
+    desc="云控注入 + 二改调度($(cat "$FLAG_DIR/config_type" 2>/dev/null))"
+  elif [ -f "$FLAG_DIR/rc_installed" ]; then
     desc="云控注入"
-  elif [ -f "$SCRC_DIR/sc_installed" ]; then
-    desc="二改调度($(cat "$SCRC_DIR/config_type" 2>/dev/null))"
+  elif [ -f "$FLAG_DIR/sc_installed" ]; then
+    desc="二改调度($(cat "$FLAG_DIR/config_type" 2>/dev/null))"
   else
     desc="无任何功能，建议卸载"
   fi
@@ -53,8 +53,8 @@ log "========================================="
 log "Turbo调度 开机服务启动"
 
 # ── Scene 调度 ──
-if [ -f "$SCRC_DIR/sc_installed" ]; then
-  config_type=$(cat "$SCRC_DIR/config_type" 2>/dev/null)
+if [ -f "$FLAG_DIR/sc_installed" ]; then
+  config_type=$(cat "$FLAG_DIR/config_type" 2>/dev/null)
 
   log "[Scene] 等待开机完成... (类型: $config_type)"
   wait_boot_ready
@@ -93,7 +93,7 @@ if [ -f "$SCRC_DIR/sc_installed" ]; then
 fi
 
 # ── 云控注入 ──
-if [ -f "$SCRC_DIR/rc_installed" ]; then
+if [ -f "$FLAG_DIR/rc_installed" ]; then
   log "[云控] 后台服务启动"
 
   {

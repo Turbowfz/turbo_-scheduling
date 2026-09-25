@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # enc 路径真机实测 (需 root): 借一个已安装游戏的包名放入 .enc, 跑完整注入, 最后自动还原。
 # 用法 (设备上): sh enc_live_test.sh <测试用.enc 路径> [替代注入器路径]
-#   替代注入器 (如参考项目 SCRC 的 bin/inject) 会被临时装到模块 bin/inject, 结束时还原。
+#   替代注入器 (可选的另一份注入器二进制) 会被临时装到模块 bin/inject, 结束时还原。
 # 全程自动还原: 备份受影响的行、还原 json、删除测试产生的行。
 M=/data/adb/modules/Turbo_Scheduling
 T=/data/local/tmp/enc_test

@@ -1,6 +1,6 @@
 /* ── 路径常量 (全部页面共享) ── */
 const MODDIR      = '/data/adb/modules/Turbo_Scheduling';
-const SCRC        = '/data/adb/turbo';
+const FLAG_DIR        = '/data/adb/turbo';
 const PKG_CFG     = '/data/data/com.omarea.vtools/files/categories.json';
 const SC_SCRIPT   = MODDIR + '/scripts/scene_config.sh';
 /* 云控页 (cloud-io / cloud-form / cloud-page 共用) */
@@ -52,7 +52,7 @@ window.execFull = function(cmd, timeoutMs) {
   });
 };
 
-/* ── execStdout (回调形式, 兼容各版本 KsuWebUI): 语义与旧版一致, 仅供读操作 ──
+/* ── execStdout (回调形式, 兼容各版本 WebUI 宿主): 语义与旧版一致, 仅供读操作 ──
    写文件/写库一律用 execFull 或 writeFileChecked 自行校验结果 */
 window.execStdout = async function(cmd, timeoutMs) {
   const r = await execFull(cmd, timeoutMs);

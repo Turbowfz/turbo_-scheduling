@@ -21,7 +21,7 @@ async function readJsonFile(path) {
 
 /* 用户包名镜像: 存放在 /data/adb/turbo (root 专属目录, Scene 不可及)。
    Scene 侧 categories.json 被覆盖/内容漂移时, 开机部署以镜像为准恢复 —— 添加的包名不丢 */
-const PKG_MIRROR = SCRC + '/categories_user.json';
+const PKG_MIRROR = FLAG_DIR + '/categories_user.json';
 
 /* 原子写入: 分块base64 → 解码到同目录临时文件 → 校验标记 → mv 原子替换 (中断不损坏原文件)
    withMirror=true (用户实际的增/删操作): 写入后锁 555 + 同步镜像 ——
@@ -32,7 +32,7 @@ async function saveJsonFile(path, obj, withMirror) {
   const j = JSON.stringify(obj, null, 4);
   await writeFileChecked(path, j + '\n');
   if (withMirror) {
-    await execStdout(`chmod 555 '${path}' 2>/dev/null; mkdir -p '${SCRC}' && cp -f '${path}' '${PKG_MIRROR}' 2>/dev/null`);
+    await execStdout(`chmod 555 '${path}' 2>/dev/null; mkdir -p '${FLAG_DIR}' && cp -f '${path}' '${PKG_MIRROR}' 2>/dev/null`);
   } else {
     await execStdout(`chmod 555 '${path}' 2>/dev/null`);
   }
@@ -81,7 +81,7 @@ async function loadOrCreateConfig() {
 window.loadPackages = async function() {
   try {
     /* 未启用二改调度: categories.json 由 Scene 调度部署, 此时不读不写 (避免凭空创建文件), 仅提示 */
-    const scOn = await execStdout(`[ -f '${SCRC}/sc_installed' ] && echo 1 || true`);
+    const scOn = await execStdout(`[ -f '${FLAG_DIR}/sc_installed' ] && echo 1 || true`);
     if (!scOn.includes('1')) {
       document.getElementById('package-list').innerHTML = '<div class="empty-tip">未启用二改Scene调度, 本页不可用</div>';
       const cnt = document.getElementById('package-count');
@@ -118,7 +118,7 @@ window.addPackage = async function() {
   if (!/^([a-zA-Z][a-zA-Z0-9_]*\.)+[a-zA-Z][a-zA-Z0-9_]*$/.test(pkg)) { pkgLog('包名格式无效: ' + pkg, 'error'); return; }
   if (_packages.includes(pkg)) { pkgLog('包名已存在: ' + pkg, 'warning'); inp.value = ''; inp.focus(); return; }
   /* 未启用二改调度时不允许写 categories.json */
-  const scOn = await execStdout(`[ -f '${SCRC}/sc_installed' ] && echo 1 || true`);
+  const scOn = await execStdout(`[ -f '${FLAG_DIR}/sc_installed' ] && echo 1 || true`);
   if (!scOn.includes('1')) { pkgLog('未启用二改Scene调度, 无法编辑', 'error'); return; }
   _adding = true;
   try {
@@ -140,7 +140,7 @@ window.addPackage = async function() {
 let _deleting = false;   /* 防重入: 与 addPackage 同款 */
 window.deletePackage = async function(pkg) {
   if (_deleting) return;
-  const scOn = await execStdout(`[ -f '${SCRC}/sc_installed' ] && echo 1 || true`);
+  const scOn = await execStdout(`[ -f '${FLAG_DIR}/sc_installed' ] && echo 1 || true`);
   if (!scOn.includes('1')) { pkgLog('未启用二改Scene调度, 无法编辑', 'error'); return; }
   _deleting = true;
   try {

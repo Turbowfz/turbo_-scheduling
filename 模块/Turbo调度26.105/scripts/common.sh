@@ -3,7 +3,7 @@
 #  Turbo调度 · 公共函数库 (被其他脚本 source)
 # ═══════════════════════════════════════════════
 
-SCRC_DIR="/data/adb/turbo"
+FLAG_DIR="/data/adb/turbo"
 VT_FILES="/data/data/com.omarea.vtools/files"
 
 # 调速器节点: 原来在 source 时就用 ls|head 探一次 (每次 source 白付两个进程 ≈ 22ms,
@@ -48,15 +48,15 @@ prepare_scene_dir() {
 
 # ── Scene 备份还原 (返回0=成功可清理, 1=失败必须保留备份) ──
 restore_scene_now() {
-  [ -f "$SCRC_DIR/sc_installed" ] || return 0
+  [ -f "$FLAG_DIR/sc_installed" ] || return 0
   log "还原Scene配置 (强制切回软件自带调度)"
   am force-stop com.omarea.vtools 2>/dev/null
   prepare_scene_dir 30 || return 1
-  if [ -d "$SCRC_DIR/backup" ]; then
+  if [ -d "$FLAG_DIR/backup" ]; then
     # cp -af 原样保留备份里的属主/上下文/权限; 全目录 chmod 会摸 ctime 触发热加载
-    cp -af "$SCRC_DIR/backup/." "$VT_FILES/" 2>/dev/null
+    cp -af "$FLAG_DIR/backup/." "$VT_FILES/" 2>/dev/null
     local bf ok=1
-    for bf in "$SCRC_DIR/backup"/*.json; do
+    for bf in "$FLAG_DIR/backup"/*.json; do
       [ -f "$bf" ] || continue
       [ -f "$VT_FILES/${bf##*/}" ] || ok=0
     done

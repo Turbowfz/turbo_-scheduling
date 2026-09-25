@@ -11,11 +11,11 @@ if [ -d "/data/adb/scrc" ]; then
     mv /data/adb/scrc /data/adb/turbo 2>/dev/null
   fi
 fi
-SCRC_DIR="/data/adb/turbo"
+FLAG_DIR="/data/adb/turbo"
 SERVICE_DIR="/data/adb/service.d"
 DAEMON_FILE="$SERVICE_DIR/.turbo_restore.sh"
 
-if [ -f "$SCRC_DIR/sc_installed" ]; then
+if [ -f "$FLAG_DIR/sc_installed" ]; then
   # 注意: 备份 Scene 原始配置只在安装时 scene_config.sh create_backup 做 ——
   # post-fs-data 阶段 CE 存储尚未解锁, 在这里 cp /data/data/... 必然失败且被吞
   # (旧版在此的"兜底备份"是假安全感, 已删除)
