@@ -20,6 +20,8 @@
 - 对照参考项目源码复查 (ORC 的 inject.rs + SCRC_v5.0.4): json 路径逐项比对后只发现一处需要改 —— 布尔值原来会被写成 "true"/"false" 文本 (落进 INTEGER 列就成了字符串, 应用按数字读会拿不到值), 现按 inject.rs 的 sql_value 落成 1/0。其余各处我们已等同或更好: 参数化绑定 (ORC 是字符串拼接 SQL)、建档骨架 (ORC 要求 JSON 自带全部 NOT NULL 列)、强制 from_server=0 (ORC 只信 JSON 里的值)、失败时非零退出 (ORC 即使一个都没写成功也返回 0)、WAL 收尾与 sidecar 属主修复 (ORC 没有)、只注入已安装游戏
 - enc 侧复查结论 (参考 SCRC_v5.0.4): 它的流程与目录约定和本模块一致 (按机型把 config/<机型>/*.enc 移入 encrypted_oplus-config/ → pkill -f inject → 跑注入器), 触发器 SQL 也相同; 但它的注入器并不更强 —— 真机实测把 SCRC 自己的注入器换上、喂它自己的 .enc, 同样报"解密失败"。原因是 .enc 与设备绑定 (两个注入器都读 getprop ro.boot.prjname), 别的机型项目名生成的 .enc 在本机解不开, 只有本机对应的 .enc 才行。故 enc 流程与注入器保持不变
 - 新增 tests/enc_live_test.sh: 真机 enc 链路实测脚本 (借壳验证 + 自动还原 —— 备份受影响的行、还原 json、删除测试行、还原注入器), 以后拿到本机可用的 .enc 可直接跑它验证
+- 模块瘦身 (zip 3.94MB → 2.1MB, 省 45%): ①不再随包提供 KsuWebUI.apk (压缩后 1.32MB) 及其安装逻辑, WebUI 直接用 KernelSU 管理器的模块 WebUI 打开; ②不再自带 libsqlite3.so (省 850KB 设备空间 / 465KB 包体), 改用系统自带的 /system/lib64/libsqlite.so —— 参考项目 SCRC 就是这么做的 (它的注入器只 dlopen 系统库, 不带库文件)。安装时自动建 libsqlite3.so 符号链接并当场自检 (跑不通会明确提示), 链接丢失时每次开机自动补; inject 本来就优先 dlopen 系统库, 不受影响
+- WebUI 去掉云控配置的备份功能 (保存前自动备份 + 备份管理面板 / 恢复 / 删除), 相关 JS / CSS / 界面一并清理; 安装器的"覆盖安装前把旧 cccf 备份到 cccf_backup"保留 (那是升级前的一次性保护, 不是 WebUI 功能)
 #26.104
 -移除破坏神模式: 删除磁贴 APK 与安装/卸载流程 (安装器不再询问, 开机也不再生成还原副本); 旧版残留 (挂载源/根目录APK/标志文件/package) 在覆盖安装与卸载时自动清理
 -模块瘦身: 移除 Devastator.apk 与 scene_config 里为老磁贴保留的 config/ 还原副本, zip 体积 4.65MB → 3.93MB

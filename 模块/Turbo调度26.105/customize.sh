@@ -70,33 +70,6 @@ validate_soc() {
   return 1
 }
 
-extract_app() {
-  if [ -f "/proc/zipalign" ]; then
-    unzip -oj "$ZIPFILE" "KsuWebUI.apk" -d "$MODPATH" >/dev/null 2>&1 && return 0
-  fi
-  [ -n "$MAGISK_MODULE_ZIP" ] && {
-    unzip -oj "$MAGISK_MODULE_ZIP" "KsuWebUI.apk" -d "$MODPATH" >/dev/null 2>&1 && return 0
-  }
-  zip_path=$(grep '\.zip' /proc/self/mountinfo 2>/dev/null | tail -n1 | awk '{print $5}')
-  [ -f "$zip_path" ] && {
-    unzip -oj "$zip_path" "KsuWebUI.apk" -d "$MODPATH" >/dev/null 2>&1 && return 0
-  }
-  ui_print "! 无法定位模块 ZIP"
-  return 1
-}
-
-install_webui() {
-  ui_print "- WebUI 处理中..."
-  [ -f "$MODPATH/KsuWebUI.apk" ] || { extract_app || { ui_print "  ! WebUI 跳过"; return 1; }; }
-
-  if [ -f "/data/adb/magisk.db" ] || ls /data/adb/magisk/*magisk* >/dev/null 2>&1; then
-    pm install -g -r "$MODPATH/KsuWebUI.apk" >/dev/null 2>&1 && ui_print "  + WebUI 已安装" || ui_print "  ! 请手动安装 APK"
-  else
-    ui_print "  + KernelSU 环境，无需操作"
-  fi
-  rm -f "$MODPATH/KsuWebUI.apk"
-}
-
 update_description() {
   local desc
   if [ -f "$SCRC_DIR/rc_installed" ] && [ -f "$SCRC_DIR/sc_installed" ]; then
@@ -197,6 +170,26 @@ set_permissions() {
   [ -f "$MODPATH/bin/cosa" ] && chmod 755 "$MODPATH/bin/cosa" 2>/dev/null
 }
 
+# cosa 需要 SQLite 库。模块不再自带 (省 850KB 设备空间 / 465KB 包体), 改用系统自带的
+# /system/lib64/libsqlite.so —— 参考项目 SCRC 就是这么做的 (它的注入器只 dlopen 系统库, 不带库文件)。
+# 这里建一个 libsqlite3.so 符号链接让 cosa 的 DT_NEEDED 能解析到系统库, 并当场自检一次。
+link_system_sqlite() {
+  local sys_lib="/system/lib64/libsqlite.so"
+  [ -f "$sys_lib" ] || {
+    ui_print "  ! 未找到系统 SQLite 库 ($sys_lib)"
+    ui_print "    云控注入将不可用 (二改调度不受影响)"
+    return 1
+  }
+  ln -sf "$sys_lib" "$MODPATH/bin/libsqlite3.so" 2>/dev/null || { ui_print "  ! 无法创建 SQLite 符号链接"; return 1; }
+  # cosa version 不碰数据库, 但动态链接器启动时就要加载 libsqlite3.so → 能跑通即说明库可用
+  if LD_LIBRARY_PATH="$MODPATH/bin" "$MODPATH/bin/cosa" version >/dev/null 2>&1; then
+    ui_print "  + SQLite: 使用系统库 (libsqlite.so)"
+    return 0
+  fi
+  ui_print "  ! 系统 SQLite 库无法被 cosa 加载, 云控注入将不可用"
+  return 1
+}
+
 ui_print "+-----------------------------------------+"
 ui_print "|  Turbo-Scheduling · 安装启动     |"
 ui_print "+-----------------------------------------+"
@@ -267,13 +260,13 @@ fi
 
 ui_print ""
 
-install_webui
-
 clean_after_install
 
 update_description
 
 set_permissions
+
+link_system_sqlite
 
 ui_print ""
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━"

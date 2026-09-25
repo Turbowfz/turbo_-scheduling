@@ -5,7 +5,6 @@ const PKG_CFG     = '/data/data/com.omarea.vtools/files/categories.json';
 const SC_SCRIPT   = MODDIR + '/scripts/scene_config.sh';
 /* 云控页 (cloud-io / cloud-form / cloud-page 共用) */
 const CCCF        = MODDIR + '/cccf';
-const BKC         = MODDIR + '/cccf_backup';
 /* COSA 数据库工具 (Rust 二进制, 子命令接口; 数据库路径由工具内部发现) */
 const COSA        = MODDIR + '/bin/cosa';
 

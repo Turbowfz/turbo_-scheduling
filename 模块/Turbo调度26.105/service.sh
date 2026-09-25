@@ -13,6 +13,9 @@ log_reset "$LOG_DIR"
 
 # ── bin 执行位自愈 (个别安装器环境 chmod 不残留, 缺执行位时 root 也无法 exec) ──
 chmod 777 "$MODDIR/bin/inject" 2>/dev/null; chmod 755 "$MODDIR/bin/cosa" 2>/dev/null
+# ── SQLite 库自愈: 模块不再自带库, 用系统的 /system/lib64/libsqlite.so (参考项目 SCRC 的做法) ──
+# 符号链接丢了就补上, 否则 cosa 连启动都起不来 (覆盖安装/模块目录被重建时可能丢)
+[ -e "$MODDIR/bin/libsqlite3.so" ] || ln -sf /system/lib64/libsqlite.so "$MODDIR/bin/libsqlite3.so" 2>/dev/null
 
 # ── description 开机自愈: 安装时的 sed 改的是解包临时目录, 会被 KSU 用 zip 原始
 #    module.prop 覆盖 (永远显示"重启后生效")。每次开机按标志文件刷新一次 ──

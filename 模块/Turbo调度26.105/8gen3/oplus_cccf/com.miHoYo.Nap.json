@@ -35,13 +35,12 @@
   "gpa_config": {
     "60": {
       "cl": -1,
-      "ch": 20,
-      "sm": 11,
+      "ch": 31,
+      "sm": 10,
       "gf": -1,
-      "gm": 25,
+      "gm": 34,
       "tl": -1,
       "th": 15,
-      "core": "-1,-1,-1,-1,-1,-1,-1,-1",
       "mtl": "80,80,80,80",
       "fast": "95,95,0,0,110",
       "dpcpus": "0-1 5-6",
@@ -52,46 +51,41 @@
       "cold": 60,
       "cpuload": "1,2,2,0",
       "framedrop": "0,-1",
-      "sft": 4,
+      "sync": 1,
+      "chtb": {
+        "enable": true
+      },
       "es4g": {
         "state": true,
         "isolate": "144,0",
-        "isoctrl": {
-          "enable": true,
-          "high": 80,
-          "low": 70
-        },
+        "clist": "4,7,2,3",
         "partial": true,
-        "rpartctrl": {
-          "enable": true,
-          "high": 50,
-          "low": 40
-        },
-        "clist": "4,7,3,2",
-        "fps": 60,
-        "delay": 35000,
-        "app": 2,
-        "misfit": 40
+        "fps": 60
       },
       "mema": {
-        "mode": "2",
+        "beta": "45",
+        "mode": "0",
         "tl": "0,80,200,90",
         "custom": {
           "7": {
+            "beta": 35,
             "mode": 0,
-            "tl": "0,70,250,80,500,90"
+            "tl": "0,75,500,80,800,90"
           },
-          "0-1": "60,0",
+          "0-1": {
+            "beta": 60,
+            "mode": 0
+          },
           "2-4": {
+            "beta": 45,
             "mode": 0,
-            "tl": "0,80,300,90"
+            "tl": "0,80,200,85,400,90"
           },
-          "5-6": "60,0"
+          "5-6": {
+            "beta": 60,
+            "mode": 0
+          }
         }
-      },
-      "timeline": {
-        "ddl": 30,
-        "switch": 0
       }
     }
   },
@@ -103,14 +97,6 @@
   "data_collector": "",
   "simple_client": {
     "fg": {
-      "control": {
-        "gpu_control": [
-          "903000000",
-          "231000000",
-          "1",
-          "1"
-        ]
-      },
       "decision": [
         {
           "type": "game_switch_enable",
@@ -127,7 +113,6 @@
           "value": "0"
         }
       ],
-      "control": "-1",
       "sf_tf": "0,0"
     }
   },
@@ -140,6 +125,8 @@
     "recognize_interval": "1000",
     "wake_up_times": "10",
     "key_thread_ux": "2",
+    "key_worker_ux": "2",
+    "white_list_ux": "2",
     "bind_core": "1",
     "pipeline": {
       "4": "__render__",
@@ -167,16 +154,24 @@
   "game_stop": "",
   "game_status": "",
   "game_switch": "",
-  "game_config": "",
+  "game_config": {
+    "ctb": 1,
+    "htb": 1,
+    "ctep": 80,
+    "cht_boost_max": "0,10,2,31,5,12,7,34",
+    "cht_boost_min": "0,6,2,23,5,0,7,20",
+    "rgr": 1,
+    "perfd": {
+      "status": true,
+      "sde": 0
+    }
+  },
   "perf_mode": "",
   "target_fps": "",
   "thermal_frame": {
     "60": {
-      "tt": 430,
-      "phase": 2,
-      "param": "5,44,10,45,30",
-      "mg": 8,
-      "fi_nl": "49,45"
+      "balance_nl": "50,45,52,30",
+      "highperf_nl": "53,45,55,30"
     }
   },
   "resv_1": "",
@@ -186,32 +181,16 @@
   "resv_5": "",
   "resv_6": "",
   "resv_7": "",
-  "resv_8": {
-    "solutions": [
-      "rcas"
-    ]
-  },
+  "resv_8": "",
   "resv_9": "",
   "resv_10": "",
   "resv_11": "",
   "resv_12": "",
-  "resv_13": {
-    "targetFrameInsertFPS": 120,
-    "maxLowFPS": 24,
-    "lowFPSLimit": 30,
-    "minLowFPS": 10,
-    "thermalLimit": 51,
-    "thermalLevelLimit": 13,
-    "validThermalLevel": 11,
-    "sr_hdr_normal": 48,
-    "sr_hdr_low": 48,
-    "sr_hdr_high": 51,
-    "sr_hdr_x": 51
-  },
+  "resv_13": "",
   "unity_game_boost": "",
   "fps_stabilizer": {
-    "boostStep": "0.9,1.1",
-    "freqStep": "12,0,20,0,15,0,25,0,12,6,24,20,15,0,30,28",
+    "boostStep": "0.9,1.1,1.3",
+    "freqStep": "11,0,20,0,15,0,25,0,12,6,24,13,15,0,30,17,13,6,31,20,15,0,34,20",
     "temp": 500
   },
   "bg_update": ""

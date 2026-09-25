@@ -19,11 +19,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const formEl = document.getElementById('cf-base-form'); if (formEl) {
     formEl.addEventListener('click', e => {
       const fl = e.target.closest('.cf-fl'); if (!fl) return; const row = fl.closest('.cf-field'); if (!row) return; const tip = row.nextElementSibling; if (tip && tip.classList.contains('cf-tiprow')) tip.classList.toggle('open'); }); }
-  /* 备份管理: 列表按钮委托 */
-  const bkList = document.getElementById('cf-bk-list'); if (bkList) {
-    bkList.addEventListener('click', e => {
-      const rb = e.target.closest('[data-bkrestore]'); const db = e.target.closest('[data-bkdel]'); if (rb) restoreBackup(rb.getAttribute('data-bkrestore')); else if (db) deleteBackup(db.getAttribute('data-bkdel')); }); }
-  const bkRefresh = document.getElementById('cf-bk-refresh'); if (bkRefresh) bkRefresh.addEventListener('click', loadBackupList); /* 文本版按钮绑定 (旧 cloud-file 下拉已删, 这些按钮不再依赖它存在) */
   on('cf-pro-read-file', 'click', readCloudFromFile); on('cf-pro-read-db', 'click', readCloudFromDB); on('cloud-save-btn', 'click', saveCloudToDB); on('cloud-save-file-btn', 'click', saveCloudToFile); on('cloud-del-btn', 'click', deleteCloudFile); const dbSel = document.getElementById('cf-db-pkg'); if (dbSel) {
     dbSel.addEventListener('change', () => { if (dbSel.value) cloudLog('已选择数据库游戏: ' + dbSel.value, 'info'); }); on('cf-db-export-btn', 'click', dbExportToCccf); on('cf-cloud-fetch-btn', 'click', fetchCloudConfig); }
   on('cosa-clear-btn', 'click', clearCosaData); on('cosa-restart-btn', 'click', restartCosa); on('cosa-refresh-btn', 'click', refreshDbConfig); const injBtn = document.getElementById('cloud-inject-btn'); if (injBtn) injBtn.addEventListener('click', runCloudInject); on('clear-cloud-log', 'click', () => { const lc = document.getElementById('cloud-log'); if (lc) lc.innerHTML = ''; });
@@ -83,5 +78,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     }); }
 
   let saved = 'basic'; try { saved = localStorage.getItem('turbo-cloud-mode') || 'basic'; } catch (_) {}
-  setCloudMode(saved); loadCloudFiles(); loadBackupList(); loadDbPackages(); /* 数据库已建档游戏下拉 (独立于本地 cccf) */
+  setCloudMode(saved); loadCloudFiles(); loadDbPackages(); /* 数据库已建档游戏下拉 (独立于本地 cccf) */
 });

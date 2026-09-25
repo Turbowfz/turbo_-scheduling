@@ -528,11 +528,3 @@ body{
 .cf-tiprow.open{display:block}
 .cf-tip{font-size:var(--fs-xs);color:var(--tx2);line-height:1.6;background:rgba(120,140,255,.10);border-left:3px solid var(--ac);border-radius:6px;padding:7px 10px}
 [data-theme="dark"] .cf-tip{background:rgba(120,140,255,.08)}
-/* ── 备份管理 ── */
-.cf-bk-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 2px;border-bottom:1px solid rgba(255,255,255,.08)}
-.cf-bk-row:last-child{border-bottom:none}
-.cf-bk-info{min-width:0;flex:1}
-.cf-bk-file{font-size:var(--fs-xs);font-weight:600;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cf-bk-ts{font-size:var(--fs-xs);color:var(--tx3);margin-top:1px}
-.cf-bk-ops{display:flex;gap:6px;flex:none}
-.cf-bk-ops .btn{padding:7px 12px;font-size:var(--fs-xs)}

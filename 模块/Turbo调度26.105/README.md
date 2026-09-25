@@ -33,12 +33,12 @@
 │   ├── pkg_matcher.sh    游戏包名匹配 + 渠道服映射
 │   ├── asoul_install.sh  AsoulOpt 子模块安装
 │   └── whitelist.conf    渠道服白名单映射(用户可编辑)
-├── bin/                  cosa(COSA 数据库工具, Rust) + inject(enc 解密注入) + libsqlite3.so(自带库, cosa/inject 共用)
+├── bin/                  cosa(COSA 数据库工具, Rust) + inject(enc 解密注入); SQLite 用系统库(安装时自动建链接)
 ├── <SoC目录>/             各平台 scene 配置与云控模板(8gen3/8elite/8gen5/8elitegen5)
-└── webroot/              WebUI(KsuWebUI)
+└── webroot/              WebUI(用 KernelSU 管理器的模块 WebUI 打开)
     ├── core.js           公共层:路径常量 / root exec / 写入校验
     ├── status-page.js    状态页    ├── pkg-page.js  短视频包名页
-    ├── cloud-io.js       云控数据IO(读取/注入/备份)
+    ├── cloud-io.js       云控数据IO(读取/注入)
     ├── cloud-form.js     云控基础版表单(渲染/收集)
     ├── cloud-page.js     云控页骨架(日志/绑定)
     ├── settings-page.js  外观设置  ├── nav.js       导航/主题/震动

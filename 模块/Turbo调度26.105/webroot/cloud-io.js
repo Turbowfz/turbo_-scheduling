@@ -1,5 +1,5 @@
 /* ── 云控页 · 数据 IO 层 (cosa 工具版) ──
-   依赖 core.js (MODDIR/CCCF/BKC/execStdout/execFull/writeFileChecked/toB64/escapeHTML)
+   依赖 core.js (MODDIR/CCCF/execStdout/execFull/writeFileChecked/toB64/escapeHTML)
    DB 操作全部走 bin/cosa (Rust 工具, 单命令子接口): cosa list / read <包> / write <包> <json文件> / delete <包> / sync / protect / unprotect
    WebUI 只发单命令, 无 SQL 命令行参数/无复合命令/无引号转义 —— 免疫宿主 exec 怪癖 */
 
@@ -55,40 +55,6 @@ window.loadDbPackages = async function() {
     let cloud = new Set(); const rc = await cosa('list-cloud'); if (rc.ok) cloud = new Set(rc.out.split('\n').map(s => s.trim()).filter(Boolean));
     const prev = sel.value; sel.innerHTML = '<option value="">— 数据库已建档游戏 (' + pkgs.length + ', 官方下发 ' + cloud.size + ') —</option>' +
       pkgs.map(p => `<option value="${escapeHTML(p)}">${cloud.has(p) ? '☁ ' : ''}${escapeHTML(p)}</option>`).join(''); sel.value = pkgs.includes(prev) ? prev : ''; cloudLog('数据库游戏: ' + pkgs.length + ' 个' + (cloud.size ? ', 其中 ' + cloud.size + ' 个已有官方下发配置 (标 ☁)' : ''), pkgs.length ? 'info' : 'warning'); } catch (e) { cloudLog('数据库游戏列表加载失败: ' + e.message, 'error'); }
-}; /* ═══════════ 备份机制 (cccf_backup) ═══════════ */
-
-function tsStamp() {
-  const d = new Date(), p = n => String(n).padStart(2, '0'); return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
-}
-/* 保存前备份: cccf/<name> → cccf_backup/<name>.bak_<时间戳>; 每文件保留最近 10 份 */
-async function backupCccfFile(name) {
-  if (!name) return; if (!safeName(name)) { cloudLog('文件名异常, 跳过备份: ' + name, 'error'); return; }
-  const ts = tsStamp(); await execStdout(`[ -f '${CCCF}/${name}' ] && mkdir -p '${BKC}' && cp -f '${CCCF}/${name}' '${BKC}/${name}.bak_${ts}' && cd '${BKC}' && ls -t '${name}'.bak_* 2>/dev/null | tail -n +11 | xargs -r rm -f`);
-}
-function parseBakName(f) {
-  const i = f.lastIndexOf('.bak_'); if (i < 0) return null; const src = f.slice(0, i), ts = f.slice(i + 5); const m = ts.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/); return { src, ts: m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]}` : ts };
-}
-window.loadBackupList = async function() {
-  const list = document.getElementById('cf-bk-list'); const cnt = document.getElementById('cf-bk-count'); if (!list) return; try {
-    const raw = await execStdout(`ls '${BKC}' 2>/dev/null`); const files = raw.split('\n').map(s => s.trim()).filter(Boolean).sort().reverse(); if (cnt) cnt.textContent = files.length + ' 份'; if (!files.length) { list.innerHTML = '<div class="empty-tip">暂无备份 · 保存时自动创建</div>'; return; }
-    list.innerHTML = files.map(f => {
-      const p = parseBakName(f) || { src: f, ts: '' }; return `<div class="cf-bk-row">
-        <div class="cf-bk-info"><div class="cf-bk-file">${escapeHTML(p.src)}</div><div class="cf-bk-ts">${escapeHTML(p.ts)}</div></div>
-        <div class="cf-bk-ops"><button class="btn" data-bkrestore="${escapeHTML(f)}">恢复</button>
-        <button class="btn" data-bkdel="${escapeHTML(f)}">删</button></div></div>`; }).join(''); } catch (e) { cloudLog('备份列表加载失败: ' + e.message, 'error'); }
-};
-window.restoreBackup = async function(bak) {
-  const p = parseBakName(bak); if (!p) { cloudLog('备份文件名异常: ' + bak, 'error'); return; }
-  if (!safeName(bak) || !safeName(p.src)) { cloudLog('备份文件名含非法字符, 已拒绝恢复: ' + bak, 'error'); return; }
-  try {
-    await backupCccfFile(p.src); await execStdout(`cp -f '${BKC}/${bak}' '${CCCF}/${p.src}'`); cloudLog('已恢复: ' + p.src + ' (恢复前的版本已另存备份)', 'success'); const bSel = document.getElementById('cf-base-file'); if (bSel && bSel.value === p.src) await onBaseFile(); loadBackupList(); } catch (e) { cloudLog('恢复失败: ' + e.message, 'error'); }
-};
-let _bkDelArmed = '';
-window.deleteBackup = async function(bak) {
-  const esc = (window.CSS && CSS.escape) ? CSS.escape(bak) : bak.replace(/"/g, '\\"'); const btn = document.querySelector(`[data-bkdel="${esc}"]`); if (_bkDelArmed !== bak) {
-    _bkDelArmed = bak; if (btn) btn.textContent = '确认?'; setTimeout(() => { if (_bkDelArmed === bak) { _bkDelArmed = ''; if (btn) btn.textContent = '删'; } }, 3500); return; }
-  _bkDelArmed = ''; try {
-    await execStdout(`rm -f '${BKC}/${bak}'`); cloudLog('备份已删除: ' + bak, 'success'); loadBackupList(); } catch (e) { cloudLog('删除失败: ' + e.message, 'error'); }
 }; /* ═══════════ UI 版: 选择/保存 (本地 cccf 文件) ═══════════ */
 
 /* 粘贴 JSON 载入 UI 表单 (WebView 无剪贴板读权限 → 展开文本区手动粘贴, 不用 Clipboard API)
@@ -117,7 +83,7 @@ window.loadBaseConfigFromPaste = function() {
     if (!safeName(name)) { cloudLog('文件名异常, 已拒绝保存: ' + name, 'error'); return; }
     try {
       const obj = collectBaseForm(); obj.from_server = 0; /* 保存到 cccf = 本地配置 (区分云端下发值) */
-      const j = JSON.stringify(obj, null, 2); await backupCccfFile(name); await writeFileChecked(`${CCCF}/${name}`, j); cloudLog('已保存到 cccf: ' + name + ' (原文件已备份)', 'success'); loadBackupList(); } catch (e) { cloudLog('保存失败: ' + e.message, 'error'); }
+      const j = JSON.stringify(obj, null, 2); await writeFileChecked(`${CCCF}/${name}`, j); cloudLog('已保存到 cccf: ' + name, 'success'); } catch (e) { cloudLog('保存失败: ' + e.message, 'error'); }
   });
 }; /* ═══════════ 文本版: 从本地 cccf 读取 ═══════════ */
 
@@ -162,14 +128,14 @@ window.saveCloudToDB = async function() {
       cloudLog('提示: 重启 COSA 后生效', 'info'); loadDbPackages(); } catch (e) {
       await execStdout(`rm -f '${tmp}' 2>/dev/null`); cloudLog('注入失败: ' + e.message, 'error'); }
   });
-}; /* 保存 = 写入本地 cccf (先自动备份) */
+}; /* 保存 = 写入本地 cccf */
 window.saveCloudToFile = async function() {
   await withBusy(document.getElementById('cloud-save-file-btn'), async () => {
     const ed = document.getElementById('cloud-editor'); const name = dbPkgToFile(); let obj; try { obj = JSON.parse(ed.value); } catch (e) { cloudLog('JSON 格式错误: ' + e.message, 'error'); return; }
     if (!obj.package_name) { cloudLog('缺少 package_name 字段', 'error'); return; }
     const target = name || (String(obj.package_name) + '.json'); if (!safeName(target)) { cloudLog('包名含非法字符, 已拒绝保存: ' + target, 'error'); return; }
     try {
-      const j = JSON.stringify(obj, null, 2); if (name) await backupCccfFile(name); await writeFileChecked(`${CCCF}/${target}`, j); cloudLog('已保存到 cccf: ' + target + (name ? ' (原文件已备份)' : ''), 'success'); loadCloudFiles(); loadBackupList(); } catch (e) { cloudLog('保存失败: ' + e.message, 'error'); }
+      const j = JSON.stringify(obj, null, 2); await writeFileChecked(`${CCCF}/${target}`, j); cloudLog('已保存到 cccf: ' + target, 'success'); loadCloudFiles(); } catch (e) { cloudLog('保存失败: ' + e.message, 'error'); }
   });
 }; /* 导出当前编辑器内容为 cccf 文件 (从 DB 读取后固化) */
 window.dbExportToCccf = async function() {
@@ -182,7 +148,7 @@ window.dbExportToCccf = async function() {
       let text = (ed.value || '').trim(); if (!text) {
         const r = await cosa('read', pkg); if (!r.ok) { cloudLog('读取失败: ' + (r.out || r.err), 'error'); return; }
         text = r.out; }
-      const name = pkg + '.json'; await backupCccfFile(name); await writeFileChecked(`${CCCF}/${name}`, text); cloudLog('已导出到 cccf: ' + name + ' (UI 版可继续编辑)', 'success'); loadCloudFiles(); loadBackupList(); } catch (e) { cloudLog('导出失败: ' + e.message, 'error'); }
+      const name = pkg + '.json'; await writeFileChecked(`${CCCF}/${name}`, text); cloudLog('已导出到 cccf: ' + name + ' (UI 版可继续编辑)', 'success'); loadCloudFiles(); } catch (e) { cloudLog('导出失败: ' + e.message, 'error'); }
   });
 }; /* 删除 cccf 文件 (二次确认) */
 let _delArmed = '';

@@ -12,6 +12,7 @@
 //    cosa localize <cccf目录>                 兜底注入后用: 把 *.enc 对应的行标回 from_server=0 并重新武装保护
 //    cosa protect | unprotect                 三联保护开关
 //    cosa diag                               诊断: 触发器现状 + 本地/服务器行数 + 注入拦截自检
+//    cosa version                            版本 (同时可用来验证 SQLite 库能否加载)
 //  设计: rusqlite 直连 (零 shell/零命令行 SQL); 参数化绑定; UPDATE/INSERT 二选一;
 //        WAL checkpoint 收尾; enc 配置不支持 (由 bin/inject 兜底, 注入后 localize 收尾)。
 //  from_server 语义: 0=本地(模块注入, 受保护), !=0=服务器下发(一律不许进库)。
@@ -847,7 +848,7 @@ fn cmd_diag() -> Result<()> {
 }
 
 fn usage() -> &'static str {
-    "用法: cosa check|list|list-cloud|read <包名> [输出文件]|read-cloud <包名>|write <包名> <json文件>|delete <包名>|sync [目录]|localize <目录>|protect|unprotect|diag"
+    "用法: cosa check|list|list-cloud|read <包名> [输出文件]|read-cloud <包名>|write <包名> <json文件>|delete <包名>|sync [目录]|localize <目录>|protect|unprotect|diag|version"
 }
 
 fn main() -> std::process::ExitCode {
