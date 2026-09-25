@@ -100,7 +100,7 @@ adb pull /system/lib64/libsqlite.so cosa-rs/prebuilt/libsqlite3.so
 
 ## 致谢
 
-完整名单见 [模块内的 Thanks_list.md](模块/Turbo调度26.105/Thanks_list.md):@安与的安(部分代码/框架/思路)、@喵喵ski(原版 scene 文件)、@星海亦有岸(部分代码和思路)、@toolfor(云控注入工具)、@ox奈睿(8g3 第五人格云控配置)、@巭孬甭莪(部分思路与 API)。
+完整名单见 [模块内的 Thanks_list.md](模块/Turbo调度26.105/Thanks_list.md):@安与的安(部分代码/框架/思路)、@嘟嘟ski(原版 scene 文件)、@星海亦有岸(部分代码和思路)、@toolfor(云控注入工具)、@ox奈睿(8g3 第五人格云控配置)、@巭孬甭莪(部分思路与 API)。
 
 ### 第三方组件
 
