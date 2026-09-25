@@ -155,6 +155,9 @@ clean_after_install() {
   # 标志文件无条件清 (磁贴包可能早就被卸载, 只按"包装没装"判断会漏掉 /data/adb/turbo 下的残留标志)
   rm -rf "$MODPATH/devastator" "$MODPATH/system/app/Devastator" 2>/dev/null
   rm -f "$MODPATH/scripts/devastator.sh" "$MODPATH/webroot/devastator-page.js" "$MODPATH/Devastator.apk" 2>/dev/null
+  # v26.102 起数据库操作全走 cosa, bin/sqlite3 (1.36MB) 已不再提供 —— 覆盖安装时若模块目录
+  # 不是整目录替换, 这个死文件会一直留着, 顺手清掉
+  rm -f "$MODPATH/bin/sqlite3" 2>/dev/null
   rm -f "$SCRC_DIR/devastator_on" "$SCRC_DIR/devastator_restored" \
         "$SCRC_DIR/devastator_installed" "$SCRC_DIR/devastator_params_backup.json" 2>/dev/null
   rmdir "$MODPATH/system/app" "$MODPATH/system" 2>/dev/null
