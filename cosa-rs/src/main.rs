@@ -436,6 +436,9 @@ fn write_one(conn: &Connection, ti: &TableInfo, pkg: &str, obj: &serde_json::Map
         let sv = match v {
             Value::Null => None,
             Value::String(s) => Some(s.clone()),
+            // 布尔按 1/0 落库 (照参考项目 ORC 的 inject.rs / sql_value): 直接 to_string() 会写成
+            // "true"/"false" 文本 —— 落进 INTEGER 列就变成字符串, 应用侧按数字读会拿不到值
+            Value::Bool(b) => Some(if *b { "1".to_string() } else { "0".to_string() }),
             other => Some(other.to_string()),
         };
         sets.push((actual.to_string(), sv));
