@@ -41,18 +41,36 @@ inject_configs() {
   log "数据库: $DB"
 
   [ -d "$CCCF_DIR" ] || { echo "! cccf目录缺失"; log "错误: cccf目录缺失"; return 1; }
-  json_count=$(ls "$CCCF_DIR"/*.json 2>/dev/null | wc -l)
-  enc_count=$(ls "$CCCF_DIR"/*.enc 2>/dev/null | wc -l)
+  # 计数与"装没装"的判断全用 shell 内建: 真机上一个外部进程 11~22ms (ls|wc 就是两个)
+  json_count=0
+  for _f in "$CCCF_DIR"/*.json; do [ -f "$_f" ] && json_count=$((json_count + 1)); done
+  enc_count=0
+  for _f in "$CCCF_DIR"/*.enc; do [ -f "$_f" ] && enc_count=$((enc_count + 1)); done
   [ "$json_count" -eq 0 ] && [ "$enc_count" -eq 0 ] && { echo "  ! cccf 为空, 未检测到支持的游戏"; log "cccf目录为空"; return 1; }
   log "待注入: $json_count 个 json + $enc_count 个 enc"
 
-  # 只注入手机上已安装的游戏 (json 由 cosa sync 内部过滤; enc 以文件名为包名, 这里过滤)
-  installed_lc=$(pm list packages -3 2>/dev/null | sed 's/^package://' | tr 'A-Z' 'a-z')
-  [ -z "$installed_lc" ] && log "警告: 无法获取已安装应用列表, enc 组不按已安装性过滤"
-  pkg_installed() {
-    [ -z "$installed_lc" ] && return 0
-    echo "$installed_lc" | grep -qxF "$(echo "$1" | tr 'A-Z' 'a-z')"
+  # enc 组的"已安装"过滤 (json 由 cosa sync 内部过滤): 列表按需取 —— 模块不带 .enc,
+  # 平时白付一次 pm list (~100ms); 成员判断用内建 case, 不再每次 echo|grep
+  installed_piped=""
+  load_installed() {
+    [ -n "$installed_piped" ] && return 0
+    local lc p
+    lc=$(pm list packages -3 2>/dev/null | sed 's/^package://' | tr 'A-Z' 'a-z')
+    if [ -z "$lc" ]; then
+      log "警告: 无法获取已安装应用列表, enc 组不按已安装性过滤"
+      return 0
+    fi
+    installed_piped="|"
+    for p in $lc; do installed_piped="$installed_piped$p|"; done
   }
+  pkg_installed() {
+    [ -z "$installed_piped" ] && return 0
+    local lc_pkg
+    lc_pkg=$(echo "$1" | tr 'A-Z' 'a-z')
+    case "$installed_piped" in *"|$lc_pkg|"*) return 0 ;; esac
+    return 1
+  }
+  [ "$enc_count" -gt 0 ] && load_installed
 
   # 注入器执行: 成功=退出码0且无Error; "未获取到第三方应用"重试; 其余错误快速失败。
   # 保护只在真正调注入器的那一瞬间撤掉 (它要插行, 我们的 insert 触发器会拦), 进程一返回立刻重新武装 ——

@@ -33,8 +33,8 @@ const EXCLUDED_PKGS: [&str; 2] = [
     "oplus.cosa.default.model.config",
 ];
 
-/// 数据库路径动态发现 (inject.rs 同款 dumpsys 法 + 静态路径兜底):
-/// dumpsys 能发现多用户/非常规路径, 静态路径保证最小可用
+/// 数据库路径发现: 静态两路径优先, 命中就直接返回; 都没有才起 dumpsys 兜底
+/// (dumpsys 能发现多用户/非常规路径; 但真机上一个进程 11~22ms, 而每条命令都要走这里)
 fn db_paths() -> Vec<String> {
     let mut found = Vec::new();
     // 静态: 最常见两路径
@@ -42,6 +42,9 @@ fn db_paths() -> Vec<String> {
         if Path::new(p).exists() && !found.iter().any(|x| x == p) {
             found.push(p.to_string());
         }
+    }
+    if !found.is_empty() {
+        return found;
     }
     // 动态: dumpsys package com.oplus.cosa 的数据目录 (inject.rs 同款)
     if let Ok(out) = std::process::Command::new("dumpsys")
@@ -576,13 +579,6 @@ fn cmd_localize(dir: &str) -> Result<()> {
     }
     if pkgs.is_empty() { bail!("目录内没有 .json/.enc: {}", dir); }
 
-    // 拿不到已安装列表时不对"库里没有行"报警 (否则会刷屏)
-    let installed = installed_pkgs();
-    let is_installed = |p: &str| match &installed {
-        Some(v) => v.iter().any(|x| x == &p.to_ascii_lowercase()),
-        None => false,
-    };
-
     let dbs = db_paths();
     if dbs.is_empty() { bail!("未找到数据库"); }
     for db in &dbs {
@@ -613,7 +609,7 @@ fn cmd_localize(dir: &str) -> Result<()> {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
             if rows == 0 {
-                if is_installed(pkg) { missing.push(pkg); }
+                missing.push(pkg);
             } else if nonzero > 0 {
                 left.push(pkg);
             }
@@ -622,10 +618,19 @@ fn cmd_localize(dir: &str) -> Result<()> {
         finish_db(db);
         outln!("已标回本地 (from_server=0): {} 行 / 包 {} 个", fixed, pkgs.len());
         if !missing.is_empty() {
-            errln!(
-                "警告: 已安装但库里没有行 (注入未生效): {}",
-                missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
-            );
+            // 真有缺行时才去取已安装列表 (pm list 真机约 100ms), 用它滤掉未安装的游戏免得刷屏
+            let inst = installed_pkgs();
+            let real: Vec<&str> = missing
+                .iter()
+                .filter(|p| {
+                    inst.as_ref()
+                        .map_or(false, |v| v.iter().any(|x| x == &p.to_ascii_lowercase()))
+                })
+                .map(|s| s.as_str())
+                .collect();
+            if !real.is_empty() {
+                errln!("警告: 已安装但库里没有行 (注入未生效): {}", real.join(", "));
+            }
         }
         if !left.is_empty() {
             errln!(
@@ -648,6 +653,19 @@ fn cmd_diag() -> Result<()> {
         let ti = TableInfo::load(&conn)?;
         let pc = &ti.pc;
         outln!("数据库: {}", db);
+        // 关键列名与声明类型: 不同 COSA 版本/机型的大小写与类型可能不同 (排查兼容性问题用)
+        let ty_of = |want: &str| -> String {
+            ti.cols
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(want))
+                .map(|(n, t)| format!("\"{}\" {}", n, t))
+                .unwrap_or_else(|| "(无)".to_string())
+        };
+        outln!(
+            "  关键列: package_name={} | from_server={}",
+            ty_of("package_name"),
+            ty_of("from_server")
+        );
 
         let mut st = conn.prepare(
             "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?1 ORDER BY name",
