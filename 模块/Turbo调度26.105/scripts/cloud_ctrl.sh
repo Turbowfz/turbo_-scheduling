@@ -74,11 +74,14 @@ inject_configs() {
 
   # 注入器执行: 成功=退出码0且无Error; "未获取到第三方应用"重试; 其余错误快速失败。
   # 保护只在真正调注入器的那一瞬间撤掉 (它要插行, 我们的 insert 触发器会拦), 进程一返回立刻重新武装 ——
-  # 否则失败重试的 30 秒等待期间库是裸的, 云端可以趁机把服务器行插进来
+  # 否则重试等待期间库是裸的, 云端可以趁机把服务器行插进来。
+  # 重试用递进间隔 (5/10/20/30/30 秒, 合计最多 95 秒) 而不是固定 30 秒×5 (最长 150 秒):
+  # "未获取到第三方应用"只出现在包服务刚起来的时候, 多数情况几秒内就恢复
   run_inject() {
     local tries=0
     local out=""
     local rc=0
+    local wait_s=0
     while [ $tries -lt 5 ]; do
       LD_LIBRARY_PATH="$MODPATH/bin" "$MODPATH/bin/cosa" unprotect >/dev/null 2>&1
       out=$(LD_LIBRARY_PATH="$MODPATH/bin" "$INJECT" 2>&1)
@@ -90,10 +93,11 @@ inject_configs() {
       fi
       if echo "$out" | grep -q "未获取到第三方应用"; then
         echo "$out" | tail -2
-        echo "  ! 注入器未就绪 (第三方应用列表为空), 30秒后重试 ($((tries + 1))/5)..."
-        log "注入器未就绪, 30秒后重试 ($((tries + 1))/5)"
+        case $tries in 0) wait_s=5 ;; 1) wait_s=10 ;; 2) wait_s=20 ;; *) wait_s=30 ;; esac
         tries=$((tries + 1))
-        sleep 30
+        echo "  ! 注入器未就绪 (第三方应用列表为空), ${wait_s}秒后重试 ($tries/5)..."
+        log "注入器未就绪, ${wait_s}秒后重试 ($tries/5)"
+        sleep $wait_s
         continue
       fi
       echo "$out"
@@ -120,34 +124,48 @@ inject_configs() {
   fi
 
   # ── 2. .enc 组 (兜底, 仅无同名 json 的): bin/inject 解密 (注入器自带解密) ──
-  local enc_pick=0
+  local enc_pick=0 enc_list=""
   for enc in "$CCCF_DIR"/*.enc; do
     [ -f "$enc" ] || continue
     pkg="${enc##*/}"; pkg="${pkg%.enc}"
     if [ ! -f "$CCCF_DIR/$pkg.json" ] && pkg_installed "$pkg"; then
-      enc_pick=$((enc_pick + 1))
+      enc_pick=$((enc_pick + 1)); enc_list="$enc_list $pkg"
     fi
   done
   if [ "$enc_pick" -gt 0 ]; then
-    rm -rf "$ENC_RUN" 2>/dev/null
-    mkdir -p "$ENC_RUN"
-    for enc in "$CCCF_DIR"/*.enc; do
-      [ -f "$enc" ] || continue
-      pkg="${enc##*/}"; pkg="${pkg%.enc}"
-      if [ ! -f "$CCCF_DIR/$pkg.json" ] && pkg_installed "$pkg"; then
-        cp -f "$enc" "$ENC_RUN/" 2>/dev/null
-      fi
-    done
-    echo ""
-    echo "── 注入 .enc ($enc_pick 个) ──"
-    # 注入器 (第三方闭源) 写的是 from_server=1 的服务器行, 且它自己会装一套旧版弱触发器 →
-    # 注入成功后必须立刻 localize: 标回 from_server=0 + 校验落库 + 重装我们的新语义触发器
-    if run_inject; then
-      LD_LIBRARY_PATH="$MODPATH/bin" "$MODPATH/bin/cosa" localize "$CCCF_DIR" 2>&1 | sed 's/^/  /'
-      log "enc 注入完成 ($enc_pick 个, 已标回本地)"
-    else
-      log "错误: inject (enc) 执行失败"
+    # 前置检查: 注入器不可用 / 拿不到已安装列表时它必然失败 —— 与其白等最长 95 秒的重试,
+    # 不如直接跳过并把原因说清楚 (这两种情况在真机日志里能一眼认出)
+    if [ ! -x "$INJECT" ]; then
+      echo "  ! 跳过 enc 注入: 注入器不可用 ($INJECT)"
+      log "跳过 enc 注入: 注入器不可用"
       INJECT_FAILED=1
+    elif [ -z "$installed_piped" ]; then
+      echo "  ! 跳过 enc 注入: 拿不到已安装应用列表 (注入器同样会因此失败)"
+      log "跳过 enc 注入: 无已安装应用列表"
+      INJECT_FAILED=1
+    else
+      rm -rf "$ENC_RUN" 2>/dev/null
+      mkdir -p "$ENC_RUN"
+      for enc in "$CCCF_DIR"/*.enc; do
+        [ -f "$enc" ] || continue
+        pkg="${enc##*/}"; pkg="${pkg%.enc}"
+        if [ ! -f "$CCCF_DIR/$pkg.json" ] && pkg_installed "$pkg"; then
+          cp -f "$enc" "$ENC_RUN/" 2>/dev/null
+        fi
+      done
+      echo ""
+      echo "── 注入 .enc ($enc_pick 个):$enc_list ──"
+      # 参考项目 SCRC 的做法: 跑之前清掉可能卡住的残留注入器 (上次注入中途死掉会留下它)
+      pkill -f "$INJECT" 2>/dev/null
+      # 注入器 (第三方闭源) 写的是 from_server=1 的服务器行, 且它自己会装一套旧版弱触发器 →
+      # 注入成功后必须立刻 localize: 标回 from_server=0 + 校验落库 + 重装我们的新语义触发器
+      if run_inject; then
+        LD_LIBRARY_PATH="$MODPATH/bin" "$MODPATH/bin/cosa" localize "$CCCF_DIR" 2>&1 | sed 's/^/  /'
+        log "enc 注入完成 ($enc_pick 个, 已标回本地)"
+      else
+        log "错误: inject (enc) 执行失败"
+        INJECT_FAILED=1
+      fi
     fi
   else
     log "enc: 无兜底 (全部已有 json 覆盖)"
