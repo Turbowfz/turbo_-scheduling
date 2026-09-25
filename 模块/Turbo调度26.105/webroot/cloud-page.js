@@ -26,7 +26,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const bkRefresh = document.getElementById('cf-bk-refresh'); if (bkRefresh) bkRefresh.addEventListener('click', loadBackupList); /* 文本版按钮绑定 (旧 cloud-file 下拉已删, 这些按钮不再依赖它存在) */
   on('cf-pro-read-file', 'click', readCloudFromFile); on('cf-pro-read-db', 'click', readCloudFromDB); on('cloud-save-btn', 'click', saveCloudToDB); on('cloud-save-file-btn', 'click', saveCloudToFile); on('cloud-del-btn', 'click', deleteCloudFile); const dbSel = document.getElementById('cf-db-pkg'); if (dbSel) {
     dbSel.addEventListener('change', () => { if (dbSel.value) cloudLog('已选择数据库游戏: ' + dbSel.value, 'info'); }); on('cf-db-export-btn', 'click', dbExportToCccf); on('cf-cloud-fetch-btn', 'click', fetchCloudConfig); }
-  on('cosa-clear-btn', 'click', clearCosaData); on('cosa-restart-btn', 'click', restartCosa); on('cosa-refresh-btn', 'click', refreshDbConfig); const injBtn = document.getElementById('cloud-inject-btn'); if (injBtn) injBtn.addEventListener('click', runCloudInject); on('clear-cloud-log', 'click', () => { const lc = document.getElementById('cloud-log'); if (lc) lc.innerHTML = ''; }); /* ── cf-base-form 统一事件委托: thermal_frame 重置 / 添加场景 (展开输入行 + 确认) ──
+  on('cosa-clear-btn', 'click', clearCosaData); on('cosa-restart-btn', 'click', restartCosa); on('cosa-refresh-btn', 'click', refreshDbConfig); const injBtn = document.getElementById('cloud-inject-btn'); if (injBtn) injBtn.addEventListener('click', runCloudInject); on('clear-cloud-log', 'click', () => { const lc = document.getElementById('cloud-log'); if (lc) lc.innerHTML = ''; });
+  /* 切回页面时刷新数据库列表: 「① 清除数据」→ 进游戏等云端下发 → 切回来, 下拉里才有新行可选 */
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadDbPackages(); }); /* ── cf-base-form 统一事件委托: thermal_frame 重置 / 添加场景 (展开输入行 + 确认) ──
      重置/添加前先 collectBaseForm 收回未保存编辑, 否则 renderBaseForm 整表重建会静默清空 */
   if (formEl) {
     formEl.addEventListener('click', (ev) => {

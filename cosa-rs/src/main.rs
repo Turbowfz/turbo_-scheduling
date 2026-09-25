@@ -3,7 +3,9 @@
 //  用法:
 //    cosa check                              数据库就绪检查
 //    cosa list                               已建档包名清单
+//    cosa list-cloud                         只有"服务器下发"的包名 (from_server != 0)
 //    cosa read <包名> [输出文件]              读单行 JSON (嵌套解包)
+//    cosa read-cloud <包名>                   只读"服务器下发"的那一行 (获取官方云控配置用)
 //    cosa write <包名> <json文件>             写单行 (from_server=0 + 清服务器同名行 + 保护 + WAL)
 //    cosa delete <包名>                       删行
 //    cosa sync [cccf目录]                     全量: 目录内 *.json → 数据库 (开机注入/手动注入共用)
@@ -67,8 +69,40 @@ fn db_paths() -> Vec<String> {
 }
 
 /// 已安装的第三方应用包名 (pm list packages -3)。
+/// 已安装应用列表缓存 (与 pkg_matcher.sh 共用同一文件, 谁先算谁写):
+/// pm list 在真机约 80~100ms (binder 往返), 而开机注入 / WebUI 刷新都会问一次 → 120 秒内复用。
+/// 用真实路径而非环境变量: WebView 里跑的 cosa 拿不到 shell 的 env。
+const PKGS_CACHE: &str = "/data/adb/modules/Turbo_Scheduling/log/.installed.lst";
+const PKGS_CACHE_TTL: u64 = 120;
+
+fn pkgs_cache_fresh() -> Option<Vec<String>> {
+    let md = fs::metadata(PKGS_CACHE).ok()?;
+    let age = md.modified().ok()?.elapsed().ok()?.as_secs();
+    if age > PKGS_CACHE_TTL {
+        return None;
+    }
+    let s = fs::read_to_string(PKGS_CACHE).ok()?;
+    let v: Vec<String> = s
+        .lines()
+        .map(|l| l.trim().to_ascii_lowercase())
+        .filter(|l| !l.is_empty())
+        .collect();
+    if v.is_empty() { None } else { Some(v) }
+}
+
+fn pkgs_cache_write(v: &[String]) {
+    if let Some(dir) = Path::new(PKGS_CACHE).parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    let _ = fs::write(PKGS_CACHE, v.join("\n") + "\n");
+}
+
+/// 已安装第三方应用包名 (小写)。优先用 120 秒内的缓存, 否则跑 `pm list packages -3` 并回写缓存。
 /// 拿不到列表时返回 None → 调用方不做过滤 (fail-open, 不比现状更差)
 fn installed_pkgs() -> Option<Vec<String>> {
+    if let Some(v) = pkgs_cache_fresh() {
+        return Some(v);
+    }
     let out = std::process::Command::new("pm")
         .args(["list", "packages", "-3"])
         .output()
@@ -86,7 +120,22 @@ fn installed_pkgs() -> Option<Vec<String>> {
             }
         }
     }
-    if v.is_empty() { None } else { Some(v) }
+    if v.is_empty() { None } else { pkgs_cache_write(&v); Some(v) }
+}
+
+/// 打开数据库并设置等待锁超时。
+/// 这一步照搬 ORC 的工具 (它的字符串里有 sqlite3_busy_timeout): COSA 正在读写时我们直接写会
+/// SQLITE_BUSY 立刻失败, 设了超时就会等它放开 (真机上"注入偶尔失败"多来自这个)。
+fn open_db(path: &str) -> Result<Connection> {
+    let conn = Connection::open(path)?;
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    Ok(conn)
+}
+
+fn open_db_ro(path: &str) -> Result<Connection> {
+    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    Ok(conn)
 }
 
 fn load_cols(conn: &Connection) -> Result<Vec<(String, String)>> {
@@ -188,7 +237,7 @@ fn install_protection(conn: &Connection) -> Result<()> {
 
 /// WAL 收尾 (ORC finish): checkpoint 合并 WAL 进主库 + sidecar 属主回 COSA
 fn finish_db(db: &str) {
-    if let Ok(conn) = Connection::open(db) {
+    if let Ok(conn) = open_db(db) {
         let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
     }
     if let Ok(m) = fs::metadata(db) {
@@ -238,7 +287,7 @@ fn cmd_check() -> Result<()> {
     let dbs = db_paths();
     if dbs.is_empty() { bail!("未找到数据库"); }
     for db in &dbs {
-        let conn = Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let conn = open_db_ro(db)?;
         let cnt: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM {}", TABLE), [], |r| r.get(0))?;
         outln!("{} [{} 行]", db, cnt);
     }
@@ -250,7 +299,7 @@ fn cmd_list() -> Result<()> {
     if dbs.is_empty() { bail!("未找到数据库"); }
     let mut pkgs = BTreeSet::new();
     for db in &dbs {
-        let conn = Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let conn = open_db_ro(db)?;
         let mut stmt = conn.prepare(&format!(
             "SELECT DISTINCT package_name FROM {} WHERE package_name NOT IN ('', '{}', '{}') ORDER BY package_name;",
             TABLE, EXCLUDED_PKGS[0], EXCLUDED_PKGS[1]
@@ -265,11 +314,21 @@ fn cmd_list() -> Result<()> {
     Ok(())
 }
 
-/// 读单行 → JSON (from_server 数值化; 其余文本列原样)
-fn read_row(conn: &Connection, pkg: &str) -> Result<Option<serde_json::Value>> {
+/// 读单行 → JSON (from_server 数值化; 其余文本列原样)。
+/// cloud_only = true 时只认"服务器下发"的那行 (from_server != 0), 供"获取官方云控配置"用。
+fn read_row(conn: &Connection, pkg: &str, cloud_only: bool) -> Result<Option<serde_json::Value>> {
     let cols = load_cols(conn)?;
     let pc = real_col(&cols, "package_name").context("缺少 package_name 列")?.to_string();
-    let mut stmt = conn.prepare(&format!("SELECT * FROM {} WHERE \"{}\" = ?1 LIMIT 1;", TABLE, pc))?;
+    let sql = if cloud_only {
+        let fc = real_col(&cols, "from_server").context("该库没有 from_server 列")?;
+        format!(
+            "SELECT * FROM {} WHERE \"{}\" = ?1 AND \"{}\" != 0 LIMIT 1;",
+            TABLE, pc, fc
+        )
+    } else {
+        format!("SELECT * FROM {} WHERE \"{}\" = ?1 LIMIT 1;", TABLE, pc)
+    };
+    let mut stmt = conn.prepare(&sql)?;
     let names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
     let mut rows = stmt.query([pkg])?;
     if let Some(row) = rows.next()? {
@@ -297,8 +356,8 @@ fn cmd_read(pkg: &str, out: Option<&str>) -> Result<()> {
     let dbs = db_paths();
     if dbs.is_empty() { bail!("未找到数据库"); }
     for db in &dbs {
-        let conn = Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        if let Some(row) = read_row(&conn, pkg)? {
+        let conn = open_db_ro(db)?;
+        if let Some(row) = read_row(&conn, pkg, false)? {
             let text = serde_json::to_string_pretty(&row)?;
             match out {
                 Some(path) => {
@@ -311,6 +370,43 @@ fn cmd_read(pkg: &str, out: Option<&str>) -> Result<()> {
         }
     }
     bail!("未找到包名: {}", pkg)
+}
+
+/// list-cloud: 只列"服务器下发"的行 (from_server != 0) —— WebUI 用它标出哪些游戏有官方云控配置
+fn cmd_list_cloud() -> Result<()> {
+    let dbs = db_paths();
+    if dbs.is_empty() { bail!("未找到数据库"); }
+    let mut pkgs = BTreeSet::new();
+    for db in &dbs {
+        let conn = open_db_ro(db)?;
+        let ti = TableInfo::load(&conn)?;
+        let Some(fc) = ti.fc.as_deref() else { bail!("该库没有 from_server 列"); };
+        let mut stmt = conn.prepare(&format!(
+            "SELECT DISTINCT \"{0}\" FROM {1} WHERE \"{2}\" != 0 AND \"{0}\" NOT IN ('', ?1, ?2) ORDER BY \"{0}\";",
+            ti.pc, TABLE, fc
+        ))?;
+        let rows = stmt.query_map([EXCLUDED_PKGS[0], EXCLUDED_PKGS[1]], |r| r.get::<_, String>(0))?;
+        for p in rows {
+            let p = p?;
+            if !p.trim().is_empty() { pkgs.insert(p); }
+        }
+    }
+    for p in &pkgs { outln!("{}", p); }
+    Ok(())
+}
+
+/// read-cloud <包名>: 只读"服务器下发"的那一行 —— 「获取官方云控配置」用, 库里已有官方配置时不必先清库
+fn cmd_read_cloud(pkg: &str) -> Result<()> {
+    let dbs = db_paths();
+    if dbs.is_empty() { bail!("未找到数据库"); }
+    for db in &dbs {
+        let conn = open_db_ro(db)?;
+        if let Some(row) = read_row(&conn, pkg, true)? {
+            outln!("{}", serde_json::to_string_pretty(&row)?);
+            return Ok(());
+        }
+    }
+    bail!("没有官方下发的配置行: {} (先「①清除数据」再进一次游戏等云端下发)", pkg)
 }
 
 /// 单行写入 (连接与表结构由调用方复用): UPDATE/INSERT 二选一 + from_server=0 + 回读验证。
@@ -444,7 +540,7 @@ fn cmd_write(pkg: &str, json_path: &str) -> Result<()> {
     let dbs = db_paths();
     if dbs.is_empty() { bail!("未找到数据库"); }
     for db in &dbs {
-        let conn = Connection::open(db)?;
+        let conn = open_db(db)?;
         let ti = TableInfo::load(&conn)?;
         write_one(&conn, &ti, pkg, obj)
             .with_context(|| format!("写入 {} (@{})", pkg, db))?;
@@ -503,7 +599,7 @@ fn cmd_sync(dir: Option<&str>) -> Result<()> {
 
     for db in &dbs {
         outln!("处理数据库: {}", db);
-        let conn = Connection::open(db)?;
+        let conn = open_db(db)?;
         let ti = TableInfo::load(&conn)?;
         for (pkg, obj) in &json_data {
             match write_one(&conn, &ti, pkg, obj) {
@@ -526,7 +622,7 @@ fn cmd_delete(pkg: &str) -> Result<()> {
     let dbs = db_paths();
     if dbs.is_empty() { bail!("未找到数据库"); }
     for db in &dbs {
-        let conn = Connection::open(db)?;
+        let conn = open_db(db)?;
         let ti = TableInfo::load(&conn)?;
         let pc = &ti.pc;
         conn.execute_batch("DROP TRIGGER IF EXISTS protect_local_pkg_delete;")?;
@@ -542,7 +638,7 @@ fn cmd_protect() -> Result<()> {
     let dbs = db_paths();
     if dbs.is_empty() { bail!("未找到数据库"); }
     for db in &dbs {
-        let conn = Connection::open(db)?;
+        let conn = open_db(db)?;
         install_protection(&conn)?;
         finish_db(db);
     }
@@ -554,7 +650,7 @@ fn cmd_unprotect() -> Result<()> {
     let dbs = db_paths();
     if dbs.is_empty() { bail!("未找到数据库"); }
     for db in &dbs {
-        let conn = Connection::open(db)?;
+        let conn = open_db(db)?;
         conn.execute_batch(
             "DROP TRIGGER IF EXISTS protect_local_pkg_update; \
              DROP TRIGGER IF EXISTS protect_local_pkg_insert; \
@@ -585,7 +681,7 @@ fn cmd_localize(dir: &str) -> Result<()> {
     let dbs = db_paths();
     if dbs.is_empty() { bail!("未找到数据库"); }
     for db in &dbs {
-        let conn = Connection::open(db)?;
+        let conn = open_db(db)?;
         let ti = TableInfo::load(&conn)?;
         let pc = &ti.pc;
         let Some(fc) = ti.fc.as_deref() else {
@@ -652,7 +748,7 @@ fn cmd_diag() -> Result<()> {
     let dbs = db_paths();
     if dbs.is_empty() { bail!("未找到数据库"); }
     for db in &dbs {
-        let conn = Connection::open(db)?;
+        let conn = open_db(db)?;
         let ti = TableInfo::load(&conn)?;
         let pc = &ti.pc;
         outln!("数据库: {}", db);
@@ -748,7 +844,7 @@ fn cmd_diag() -> Result<()> {
 }
 
 fn usage() -> &'static str {
-    "用法: cosa check|list|read <包名> [输出文件]|write <包名> <json文件>|delete <包名>|sync [目录]|localize <目录>|protect|unprotect|diag"
+    "用法: cosa check|list|list-cloud|read <包名> [输出文件]|read-cloud <包名>|write <包名> <json文件>|delete <包名>|sync [目录]|localize <目录>|protect|unprotect|diag"
 }
 
 fn main() -> std::process::ExitCode {
@@ -756,8 +852,13 @@ fn main() -> std::process::ExitCode {
     let result = match args.get(1).map(String::as_str) {
         Some("check") => cmd_check(),
         Some("list") => cmd_list(),
+        Some("list-cloud") => cmd_list_cloud(),
         Some("read") => match (args.get(2), args.get(3)) {
             (Some(p), out) => cmd_read(p, out.as_deref().map(|x| x.as_str())),
+            _ => Err(anyhow::anyhow!(usage())),
+        },
+        Some("read-cloud") => match args.get(2) {
+            Some(p) => cmd_read_cloud(p),
             _ => Err(anyhow::anyhow!(usage())),
         },
         Some("write") => match (args.get(2), args.get(3)) {

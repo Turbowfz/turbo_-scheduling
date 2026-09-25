@@ -50,8 +50,11 @@ window.loadDbPackages = async function() {
     if (!(await execAlive())) { cloudLog('无法执行 root 命令, 数据库游戏列表未加载', 'error'); return; }
     const r = await cosa('list'); if (!r.ok) {
       sel.innerHTML = '<option value="">— 未找到 COSA 数据库 —</option>'; cloudLog('读取数据库列表失败: ' + (r.out || r.err || '数据库不存在, 需先打开过一次游戏'), 'error'); return; }
-    const pkgs = r.out.split('\n').map(s => s.trim()).filter(Boolean); const prev = sel.value; sel.innerHTML = '<option value="">— 数据库已建档游戏 (' + pkgs.length + ') —</option>' +
-      pkgs.map(p => `<option value="${escapeHTML(p)}">${escapeHTML(p)}</option>`).join(''); sel.value = pkgs.includes(prev) ? prev : ''; cloudLog('数据库游戏: ' + pkgs.length + ' 个', pkgs.length ? 'info' : 'warning'); } catch (e) { cloudLog('数据库游戏列表加载失败: ' + e.message, 'error'); }
+    const pkgs = r.out.split('\n').map(s => s.trim()).filter(Boolean);
+    /* 标出库里有"官方下发"行 (from_server != 0) 的游戏: 这些可以直接点「☁ 获取云端配置」 */
+    let cloud = new Set(); const rc = await cosa('list-cloud'); if (rc.ok) cloud = new Set(rc.out.split('\n').map(s => s.trim()).filter(Boolean));
+    const prev = sel.value; sel.innerHTML = '<option value="">— 数据库已建档游戏 (' + pkgs.length + ', 官方下发 ' + cloud.size + ') —</option>' +
+      pkgs.map(p => `<option value="${escapeHTML(p)}">${cloud.has(p) ? '☁ ' : ''}${escapeHTML(p)}</option>`).join(''); sel.value = pkgs.includes(prev) ? prev : ''; cloudLog('数据库游戏: ' + pkgs.length + ' 个' + (cloud.size ? ', 其中 ' + cloud.size + ' 个已有官方下发配置 (标 ☁)' : ''), pkgs.length ? 'info' : 'warning'); } catch (e) { cloudLog('数据库游戏列表加载失败: ' + e.message, 'error'); }
 }; /* ═══════════ 备份机制 (cccf_backup) ═══════════ */
 
 function tsStamp() {
@@ -232,21 +235,28 @@ window.refreshDbConfig = async function() {
     for (const line of r.out.split('\n').map(s => s.trim()).filter(Boolean)) {
       let type = 'info'; if (line.startsWith('OK:')) type = 'success'; else if (line.includes('FAIL') || line.includes('失败')) type = 'error'; cloudLog(line, type); }
     if (!r.ok && !r.out) cloudLog('刷新失败: ' + (r.err || ('退出码 ' + r.ec)), 'error'); loadDbPackages(); });
-}; /* ☁ 获取云端配置: 清除+进游戏后库内是云端真值 → cosa read → 编辑器; 随后重建保护 */
+}; /* ☁ 获取官方下发的云控配置: 只读 from_server != 0 的那一行 → 编辑器; 库里没有才需要"①清除数据"再等下发 */
 window.fetchCloudConfig = async function() {
-  const sel = document.getElementById('cf-db-pkg'); const ed = document.getElementById('cloud-editor'); const pkg = (sel.value || '').trim(); if (!pkg) { cloudLog('请先在"数据库已建档游戏"下拉中选择游戏', 'warning'); return; }
-  if (!safeName(pkg)) { cloudLog('包名异常: ' + pkg, 'error'); return; }
+  const sel = document.getElementById('cf-db-pkg'); const ed = document.getElementById('cloud-editor'); let pkg = ((sel && sel.value) || '').trim();
   await withBusy(document.getElementById('cf-cloud-fetch-btn'), async () => {
     try {
-      const r = await cosa('read', pkg); if (r.timeout) { cloudLog('读取超时', 'error'); return; }
+      /* 没选游戏: 先刷新一次列表再提示 —— ①清除数据 后下拉是空的, 用户进游戏等下发回来必须能重新选到 */
+      if (!pkg) {
+        cloudLog('未选择游戏, 先刷新数据库列表...', 'info'); await loadDbPackages(); pkg = ((sel && sel.value) || '').trim();
+        if (!pkg) { cloudLog('数据库里还没有任何游戏行: 请先「① 清除数据」→ 进一次游戏等云端下发 (可能几分钟) → 再点本按钮', 'warning'); return; }
+      }
+      if (!safeName(pkg)) { cloudLog('包名异常: ' + pkg, 'error'); return; }
+      /* 只认官方下发那行: 库里同时有我们注入的本地行时也不会读错 */
+      const r = await cosa('read-cloud', pkg); if (r.timeout) { cloudLog('读取超时', 'error'); return; }
       if (!r.ok) {
-        cloudLog('读取失败: ' + (r.out || r.err || ('退出码 ' + r.ec)), 'error'); cloudLog('若提示无该行: 请先"① 清除数据"→ 进一次游戏 (触发 COSA 拉取云端) → 回来读取', 'info'); return; }
+        cloudLog('该游戏还没有官方下发的配置行: ' + (r.out || r.err || ''), 'warning');
+        cloudLog('做法: 点「① 清除数据」→ 进一次游戏等云端下发 (可能几分钟) → 回来选该游戏再点本按钮', 'info');
+        await loadDbPackages(); return; }
       let row; try { row = JSON.parse(r.out); } catch (e) { cloudLog('返回不是合法 JSON: ' + e.message, 'error'); return; }
       if (Array.isArray(row)) row = row[0]; if (!row) { cloudLog('数据库中还没有该游戏的行: ' + pkg, 'warning'); return; }
-      ed.value = JSON.stringify(unfoldRow(row), null, 2); const fsVal = String(row.from_server); if (fsVal === '0') {
-        cloudLog('已读取: ' + pkg + ' ← 本地注入值 (from_server=0)', 'warning'); cloudLog('这不是云端配置 — 请先"① 清除数据", 进游戏等云端下发后再读取', 'info'); } else {
-        cloudLog('已读取云端配置: ' + pkg + ' (from_server=' + fsVal + ')', 'success'); }
-      /* 重建三联保护 (无论读到什么都重建, 保护不落空) */
-      const p = await cosa('protect'); if (p.ok) cloudLog('保护触发器已重建, 本地配置继续受保护', 'success'); else cloudLog('警告: 保护触发器重建失败 — ' + (p.out || p.err), 'error'); } catch (e) { cloudLog('拉取失败: ' + e.message, 'error'); }
+      ed.value = JSON.stringify(unfoldRow(row), null, 2);
+      cloudLog('已读取官方下发配置: ' + pkg + ' (from_server=' + String(row.from_server) + ')', 'success');
+      cloudLog('已填入编辑器 —— 要留用就编辑后点「⚡ 注入数据库」(会标成本地配置 from_server=0)', 'info');
+      const p = await cosa('protect'); if (p.ok) cloudLog('本地配置保护已确认', 'success'); else cloudLog('警告: 保护重建失败 — ' + (p.out || p.err), 'error'); } catch (e) { cloudLog('拉取失败: ' + e.message, 'error'); }
   });
 };

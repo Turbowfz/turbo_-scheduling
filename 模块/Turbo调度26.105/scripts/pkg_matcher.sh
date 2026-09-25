@@ -17,7 +17,17 @@ log "输出目录: $CCCF_DIR"
 
 mkdir -p "$CCCF_DIR"
 
-installed_pkgs=$(pm list packages -3 2>/dev/null | grep '^package:' | sed 's/^package://')
+# 已安装列表: 与 cosa 共用同一份 120 秒缓存 (pm list 真机约 100ms, 开机时 pkg_matcher 与
+# cosa sync/localize 都要问一次; 谁先算谁写, 后到的直接读文件)
+PKGS_CACHE="$LOG_DIR/.installed.lst"
+installed_pkgs=""
+if [ -f "$PKGS_CACHE" ] && [ -z "$(find "$PKGS_CACHE" -mmin +2 2>/dev/null)" ]; then
+  installed_pkgs=$(cat "$PKGS_CACHE" 2>/dev/null)
+fi
+if [ -z "$installed_pkgs" ]; then
+  installed_pkgs=$(pm list packages -3 2>/dev/null | grep '^package:' | sed 's/^package://')
+  [ -n "$installed_pkgs" ] && printf '%s\n' $installed_pkgs > "$PKGS_CACHE" 2>/dev/null
+fi
 [ -z "$installed_pkgs" ] && { log "错误: 无法获取已安装包列表"; echo "  ! 无法获取已安装应用列表"; exit 1; }
 
 rule_pkgs=""
