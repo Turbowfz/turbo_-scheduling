@@ -18,7 +18,7 @@
 - enc 路径真机实测并修一个误报: 在真机上跑通了整条 enc 链路 (前置检查 → 选中 enc → 拷入 → 调注入器 → 收尾 localize → 重启 COSA; 注入失败不再中断流程; 测试数据全部还原)。实测发现**注入器解密失败时退出码仍是 0**, 只在输出里打印中文"[失败] xxx (解密失败)", 而原来的成功判定只查英文 error → 会把解密失败当成功上报; 已改为连中文"失败"一起判 (两个词分开 grep: `\|` 交替是 GNU 扩展, Android 的 toybox grep 不支持, 本地 Git Bash 能过而真机匹配不上)
 - 另: enc 路径只适用于风驰云控下发、且与本机对应的 .enc —— 实测别的机型项目名生成的 .enc 谁都解不开 (注入器按 getprop ro.boot.prjname 派生密钥); tests/module_check.js 增加 lint 禁止 grep/sed 用 `\|` 交替
 - json 注入修复: 布尔值原来会被写成 "true"/"false" 文本 (落进 INTEGER 列就成了字符串, 应用按数字读会拿不到值), 现落成 1/0。其余各处复查后确认已是最优: 参数化绑定、建档骨架 (JSON 缺列也能建档)、强制 from_server=0、失败时非零退出、WAL 收尾与 sidecar 属主修复、只注入已安装游戏
-- enc 路径实测: 按机型把配置移入 encrypted_oplus-config/ → 清残留注入器 → 注入 → 标回本地, 整条链路已在真机跑通 (含失败不中断流程与数据自动还原); .enc 与设备绑定, 只有本机对应的 .enc 可解
+- enc 路径真机验证通过: 用 8gen3 的王者加密配置实测, 注入器成功解密并写入 (写入时自带 from_server=0, 与 json 路径一致), 收尾自动标回本地并重建保护; 测试后数据已完整还原。注意 .enc 与设备绑定 (密钥取自 getprop ro.boot.prjname), 只有本机对应的 .enc 可解 —— 别的机型/项目生成的会报解密失败
 - 新增 tests/enc_live_test.sh: 真机 enc 链路实测脚本 (借壳验证 + 自动还原 —— 备份受影响的行、还原 json、删除测试行、还原注入器), 以后拿到本机可用的 .enc 可直接跑它验证
 - 模块瘦身 (zip 3.94MB → 2.1MB, 省 45%): ①不再随包提供 KsuWebUI.apk (压缩后 1.32MB) 及其安装逻辑, WebUI 直接用 KernelSU 管理器的模块 WebUI 打开; ②不再自带 libsqlite3.so (省 850KB 设备空间 / 465KB 包体), 改用系统自带的 /system/lib64/libsqlite.so。安装时自动建 libsqlite3.so 符号链接并当场自检 (跑不通会明确提示), 链接丢失时每次开机自动补; inject 本来就优先 dlopen 系统库, 不受影响
 - WebUI 去掉云控配置的备份功能 (保存前自动备份 + 备份管理面板 / 恢复 / 删除), 相关 JS / CSS / 界面一并清理; 安装器的"覆盖安装前把旧 cccf 备份到 cccf_backup"保留 (那是升级前的一次性保护, 不是 WebUI 功能)
