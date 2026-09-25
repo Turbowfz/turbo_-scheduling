@@ -101,5 +101,20 @@ for (const p of walk(path.join(ROOT, MOD))) {
 }
 crlf.length ? console.log('  注意 CRLF: ' + crlf.join(', ')) : ok('文本文件全部 LF');
 
+/* 7) Android 正则坑: grep/sed 的模式里不要用 \| 交替 (GNU 扩展, toybox/bionic 不支持;
+   本地 Git Bash 是 GNU grep 能过, 真机上匹配不上 —— 已在 cloud_ctrl.sh 踩过一次) */
+n = 0;
+for (const { f, s } of allSh) {
+  for (const line of s.split('\n')) {
+    if (/^\s*#/.test(line)) continue;
+    if (!/(^|\s|\|)(grep|sed)\s/.test(line)) continue;
+    if (!/\\\|/.test(line)) continue;
+    if (/grep\s+-[A-Za-z]*E/.test(line)) continue;   /* grep -E 里的 | 是 POSIX 扩展正则, 可以用 */
+    bug(`${f} 用了 GNU 专有的 \\| 交替 (Android toybox 不支持): ${line.trim().slice(0, 60)}`);
+    n++;
+  }
+}
+if (!n) ok('没有使用 GNU 专有的 grep/sed \\| 交替');
+
 console.log('\n发现问题: ' + bugs);
 process.exit(bugs ? 1 : 0);

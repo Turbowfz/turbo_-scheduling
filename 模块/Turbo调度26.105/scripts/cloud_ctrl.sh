@@ -87,7 +87,12 @@ inject_configs() {
       out=$(LD_LIBRARY_PATH="$MODPATH/bin" "$INJECT" 2>&1)
       rc=$?
       LD_LIBRARY_PATH="$MODPATH/bin" "$MODPATH/bin/cosa" protect >/dev/null 2>&1
-      if [ "$rc" -eq 0 ] && ! echo "$out" | grep -qi "error"; then
+      # 成功判定: 退出码 0 且输出里没有错误迹象。真机实测注入器解密失败时**退出码仍是 0**,
+      # 只在输出里打印中文"[失败] xxx (解密失败)" → 必须连中文"失败"一起判, 否则会把解密失败
+      # 当成功上报 ("enc 注入完成" 但库里其实没有行)。
+      # 注意: 两个词分开 grep —— `\|` 交替是 GNU 扩展, Android 的 toybox grep 不支持
+      # (本地 Git Bash 能过、真机匹配不上的那种坑)
+      if [ "$rc" -eq 0 ] && ! echo "$out" | grep -qi "error" && ! echo "$out" | grep -q "失败"; then
         echo "$out"
         return 0
       fi
