@@ -147,12 +147,13 @@ impl TableInfo {
     }
 }
 
-/// 三联保护: 本地行 (from_server=0, 就是模块注入的配置) 不许被改写/删除;
-/// 服务器下发的行 (from_server!=0) 一律不许进库 —— 它的 INSERT 整行被跳过。
+/// 三联保护 (与生态一致): 本地行 (from_server=0, 就是模块注入的配置) 不许被改写/删除;
+/// 服务器行只在"同包名还没有本地行"时才允许插入 —— 于是云端顶不掉我们已注入的配置,
+/// 而没被我们管理的游戏仍能正常收到官方云控配置。
+/// 这条 WHEN 与 ORC 的 Rust 工具、bin/inject、SCRC 的注入器内嵌 SQL 完全一致 (参考项目就这么写的)。
 ///
-/// 这里必须 DROP + CREATE, 不能再用 CREATE IF NOT EXISTS: 第三方注入器 bin/inject 里
-/// 内置了同名的旧版触发器 (它的 insert 规则是"同包名已有本地行时才拦"), 用 IF NOT EXISTS
-/// 的话它会先建出弱版, 我们的新语义就永远顶不上去。
+/// 但必须是 DROP + CREATE, 不能再用 CREATE IF NOT EXISTS: 第三方注入器 bin/inject 里
+/// 内置了同名的旧版触发器, 用 IF NOT EXISTS 的话它先建出弱版, 我们的语义就永远顶不上去。
 fn install_protection(conn: &Connection) -> Result<()> {
     conn.execute_batch(&format!(
         r#"
@@ -170,6 +171,8 @@ fn install_protection(conn: &Connection) -> Result<()> {
         CREATE TRIGGER protect_local_pkg_insert
         BEFORE INSERT ON {TABLE}
         WHEN NEW.from_server != 0
+         AND EXISTS (SELECT 1 FROM {TABLE}
+             WHERE package_name = NEW.package_name AND from_server = 0)
         BEGIN SELECT RAISE(IGNORE); END;
 
         CREATE TRIGGER protect_local_pkg_delete
@@ -704,7 +707,21 @@ fn cmd_diag() -> Result<()> {
         )?;
         outln!("  同名冲突 (同包名既有本地行又有服务器行): {}", dup);
 
+        // 自检按生态规则来: 先造一个本地行 (from_server=0, 应当允许), 再插同包名的服务器行
+        // (from_server=1) —— 后者被触发器 IGNORE 掉才算拦下。事务内做完就回滚, 不留痕
         conn.execute_batch("BEGIN;")?;
+        let seed = conn.execute(
+            &format!(
+                "INSERT INTO {} (\"{}\", \"{}\") VALUES ('turbo.diag.selfcheck', 0)",
+                TABLE, pc, fc
+            ),
+            [],
+        );
+        if let Err(e) = seed {
+            conn.execute_batch("ROLLBACK;")?;
+            outln!("  自检: 跳过 (造本地行失败: {})", e);
+            continue;
+        }
         let ins = conn.execute(
             &format!(
                 "INSERT INTO {} (\"{}\", \"{}\") VALUES ('turbo.diag.selfcheck', 1)",
@@ -713,14 +730,17 @@ fn cmd_diag() -> Result<()> {
             [],
         );
         let landed: i64 = conn.query_row(
-            &format!("SELECT COUNT(*) FROM {} WHERE \"{}\" = 'turbo.diag.selfcheck'", TABLE, pc),
+            &format!(
+                "SELECT COUNT(*) FROM {} WHERE \"{}\" = 'turbo.diag.selfcheck' AND \"{}\" != 0",
+                TABLE, pc, fc
+            ),
             [],
             |r| r.get(0),
         )?;
         conn.execute_batch("ROLLBACK;")?;
         match ins {
-            Ok(_) if landed == 0 => outln!("  自检: 服务器行注入被拦下 OK"),
-            Ok(_) => outln!("  自检: 服务器行注入未被拦下 FAIL (进了 {} 行)", landed),
+            Ok(_) if landed == 0 => outln!("  自检: 同包名的服务器行被拦下 OK"),
+            Ok(_) => outln!("  自检: 服务器行未被拦下 FAIL (进了 {} 行)", landed),
             Err(e) => outln!("  自检: 插入未被触发器跳过 (走到约束检查: {}), 视为未拦下", e),
         }
     }
