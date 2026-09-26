@@ -108,7 +108,6 @@ adb pull /system/lib64/libsqlite.so cosa-rs/prebuilt/libsqlite3.so
 |---|---|---|
 | `模块/<版本>/bin/inject` | 云控注入工具(enc 解密注入),由 @toolfor 提供 | **不在本仓库**(本仓库只含二进制) |
 | `模块/<版本>/bin/libsqlite3.so` | SQLite 3.49.1,`cosa` 与 `inject` 共用 | 公开领域 |
-| `模块/<版本>/modules/AsoulOpt.zip` | AsoulOpt 子模块 | 上游项目 |
 | `KsuWebUI.apk` | WebUI 载体应用([a13e300/KsuWebUI](https://github.com/a13e300/KsuWebUI)) | 第三方,未纳入本仓库(随发行版 zip 提供) |
 | `模块/<版本>/<SoC>/` | 各平台 Scene 调度与云控模板 | 基于官方配置整理 |
 

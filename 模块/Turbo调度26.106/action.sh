@@ -74,8 +74,12 @@ uninstall_module() {
     command -v ksud >/dev/null 2>&1 && ksud debug set.uninstall "$_dev_pkg" >/dev/null 2>&1
     echo "- 已卸载旧版破坏神磁贴 APK"
   fi
-  # AsoulOpt 子模块 (asoul_affinity_opt) 不自动卸载, 如需移除请手动在 Magisk/KSU 中卸载
-  echo "- 提示: AsoulOpt 子模块 (asoul_affinity_opt) 未自动卸载, 如需移除请手动卸载"
+  # 移除已下线的 AsoulOpt 子模块 (老版本装过的话)
+  if [ -d /data/adb/modules/asoul_affinity_opt ]; then
+    rm -rf /data/adb/modules*/asoul_affinity_opt 2>/dev/null
+    command -v ksud >/dev/null 2>&1 && ksud module uninstall asoul_affinity_opt >/dev/null 2>&1
+    echo "- 已移除 AsoulOpt 子模块"
+  fi
   rm -f /data/adb/service.d/.turbo_restore.sh
   log "清理标志文件完成"
 

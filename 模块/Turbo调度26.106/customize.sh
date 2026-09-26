@@ -86,17 +86,7 @@ update_description() {
 
 clean_after_install() {
   if [ -f "$FLAG_DIR/rc_installed" ]; then
-    # 仅部署本机型模板 (旧版全机型混拷会互相覆盖); 现有 cccf 先备份 (每文件保留10份)
-    if [ -d "$MODPATH/cccf" ] && [ -n "$(ls "$MODPATH/cccf"/*.json 2>/dev/null)" ]; then
-      ts=$(date +%Y%m%d_%H%M%S)
-      mkdir -p "$MODPATH/cccf_backup"
-      for f in "$MODPATH/cccf"/*.json; do
-        n=$(basename "$f")
-        cp -f "$f" "$MODPATH/cccf_backup/${n}.bak_pre_${ts}" 2>/dev/null
-        ls -t "$MODPATH/cccf_backup/${n}.bak_pre_"* 2>/dev/null | tail -n +11 | xargs -r rm -f
-      done
-      ui_print "  + 旧云控配置已备份 (cccf_backup)"
-    fi
+    # 仅部署本机型模板 (旧版全机型混拷会互相覆盖); 不做备份, 直接以机型模板重建
     rm -rf "$MODPATH/cccf" 2>/dev/null
     mkdir -p "$MODPATH/cccf" 2>/dev/null
     soc_dir=$(. "$SCRIPTS_DIR/common.sh"; get_soc_dir)
@@ -124,8 +114,13 @@ clean_after_install() {
     done
     rm -rf "$MODPATH/soc" 2>/dev/null
   fi
-  # AsoulOpt.zip 已作为子模块刷入, 源文件不再需要
-  rm -rf "$MODPATH/modules" 2>/dev/null
+  # 移除已随包下线的 AsoulOpt 子模块 (老版本装过的话) 与残留源文件
+  if [ -d /data/adb/modules/asoul_affinity_opt ]; then
+    rm -rf /data/adb/modules*/asoul_affinity_opt 2>/dev/null
+    command -v ksud >/dev/null 2>&1 && ksud module uninstall asoul_affinity_opt >/dev/null 2>&1
+    ui_print "  - 已移除 AsoulOpt 子模块"
+  fi
+  rm -rf "$MODPATH/modules" "$MODPATH/cccf_backup" "$MODPATH/AsoulOpt.zip" 2>/dev/null
   # 清理旧版破坏神残留 (v26.104 起模块不再提供磁贴 APK): 磁贴挂载源 + 根目录 APK + 旧脚本
   # 标志文件无条件清 (磁贴包可能早就被卸载, 只按"包装没装"判断会漏掉 /data/adb/turbo 下的残留标志)
   rm -rf "$MODPATH/devastator" "$MODPATH/system/app/Devastator" 2>/dev/null

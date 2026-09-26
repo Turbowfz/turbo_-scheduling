@@ -31,7 +31,6 @@
 │   ├── scene_config.sh   Scene 配置部署与还原
 │   ├── cloud_ctrl.sh     云控注入流程(json→cosa sync, enc→inject)
 │   ├── pkg_matcher.sh    游戏包名匹配 + 渠道服映射
-│   ├── asoul_install.sh  AsoulOpt 子模块安装
 │   └── whitelist.conf    渠道服白名单映射(用户可编辑)
 ├── bin/                  cosa(COSA 数据库工具, Rust) + inject(enc 解密注入); SQLite 用系统库(安装时自动建链接)
 ├── <SoC目录>/             各平台 scene 配置与云控模板(8gen3/8elite/8gen5/8elitegen5)

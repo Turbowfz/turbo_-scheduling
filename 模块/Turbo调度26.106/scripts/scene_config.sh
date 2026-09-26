@@ -278,7 +278,6 @@ install_mode() {
       rm -f "$FLAG_DIR/rc_installed"
       deploy_config "generic" || return 1
       log "oplus版配置暂缺 ($soc_dir): 自动通用版"
-      sh "$SCRIPTS_DIR/asoul_install.sh" "$MODPATH"
       return 0
     fi
     echo ""
@@ -329,15 +328,11 @@ install_mode() {
       echo "  + 已选择: 通用版"
       rm -f "$FLAG_DIR/rc_installed"
       deploy_config "generic" || return 1
-      log "通用版, 询问AsoulOpt"
-      sh "$SCRIPTS_DIR/asoul_install.sh" "$MODPATH"
     fi
   else
     echo "  - 当前设备不支持风驰，自动选择通用版"
     rm -f "$FLAG_DIR/rc_installed"
     deploy_config "generic" || return 1
-    log "非oplus设备, 自动通用版"
-    sh "$SCRIPTS_DIR/asoul_install.sh" "$MODPATH"
   fi
 
   return 0
