@@ -100,7 +100,7 @@ adb pull /system/lib64/libsqlite.so cosa-rs/prebuilt/libsqlite3.so
 
 ## 致谢
 
-完整名单见 [模块内的 Thanks_list.md](模块/Turbo调度26.105/Thanks_list.md):@安与的安(部分代码/框架/思路)、@喵喵ski(原版 scene 文件)、@星海亦有岸(部分代码和思路)、@toolfor(云控注入工具)、@ox奈睿(8g3 第五人格云控配置)、@巭孬甭莪(部分思路与 API)。
+完整名单见 [模块内的 Thanks_list.md](模块/Turbo调度26.105/Thanks_list.md):@安与的安(部分代码/框架/思路)、@嘟嘟斯基(原版 scene 文件)、@星海亦有岸(部分代码和思路)、@toolfor(云控注入工具)、@ox奈睿(8g3 第五人格云控配置)、@巭孬甭莪(部分思路与 API)。
 
 ### 第三方组件
 
@@ -112,4 +112,4 @@ adb pull /system/lib64/libsqlite.so cosa-rs/prebuilt/libsqlite3.so
 | `KsuWebUI.apk` | WebUI 载体应用([a13e300/KsuWebUI](https://github.com/a13e300/KsuWebUI)) | 第三方,未纳入本仓库(随发行版 zip 提供) |
 | `模块/<版本>/<SoC>/` | 各平台 Scene 调度与云控模板 | 基于官方配置整理 |
 
-仓库内**本项目的代码**以 GPL-3.0 发布(见 LICENSE);上表中的第三方组件版权归各自作者,不在 GPL-3.0 覆盖范围内。
+仓库内**本项目的代码**以 **MIT** 许可发布(见 LICENSE):可自由使用、修改、再打包、商用,也可以闭源 —— 只需保留版权与许可声明。上表中的第三方组件版权归各自作者,不受本许可覆盖。

@@ -22,6 +22,7 @@
 - 新增 tests/enc_live_test.sh: 真机 enc 链路实测脚本 (借壳验证 + 自动还原 —— 备份受影响的行、还原 json、删除测试行、还原注入器), 以后拿到本机可用的 .enc 可直接跑它验证
 - 模块瘦身 (zip 3.94MB → 2.1MB, 省 45%): ①不再随包提供 KsuWebUI.apk (压缩后 1.32MB) 及其安装逻辑, WebUI 直接用 KernelSU 管理器的模块 WebUI 打开; ②不再自带 libsqlite3.so (省 850KB 设备空间 / 465KB 包体), 改用系统自带的 /system/lib64/libsqlite.so。安装时自动建 libsqlite3.so 符号链接并当场自检 (跑不通会明确提示), 链接丢失时每次开机自动补; inject 本来就优先 dlopen 系统库, 不受影响
 - WebUI 去掉云控配置的备份功能 (保存前自动备份 + 备份管理面板 / 恢复 / 删除), 相关 JS / CSS / 界面一并清理; 安装器的"覆盖安装前把旧 cccf 备份到 cccf_backup"保留 (那是升级前的一次性保护, 不是 WebUI 功能)
+- 项目许可改为 MIT (zip 内随附 LICENSE): 可自由使用、修改、再打包、商用, 也可以闭源 —— 只需保留版权与许可声明
 #26.104
 -移除破坏神模式: 删除磁贴 APK 与安装/卸载流程 (安装器不再询问, 开机也不再生成还原副本); 旧版残留 (挂载源/根目录APK/标志文件/package) 在覆盖安装与卸载时自动清理
 -模块瘦身: 移除 Devastator.apk 与 scene_config 里为老磁贴保留的 config/ 还原副本, zip 体积 4.65MB → 3.93MB
