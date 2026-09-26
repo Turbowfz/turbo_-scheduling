@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#ffffff">
+<title>Turbo调度</title>
+<link rel="stylesheet" href="glass-style.css">
+</head>
+<body>
+<div id="bg-layer"></div>
+<!-- ▼ 背景 + 模糊度同步注入 (必须内联, 最先执行) -->
+<script>
+(function(){
+  try { if (typeof ksu !== 'undefined' && ksu && ksu.fullScreen) ksu.fullScreen(true); } catch(_) {}
+  try {
+    if (localStorage.getItem('turbo-theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); var op = localStorage.getItem('turbo-blur'); var opN = parseInt(op, 10); var blur = Number.isFinite(opN) ? Math.max(0, Math.min(40, opN)) : 13; document.documentElement.style.setProperty('--blur', blur + 'px'); } catch(_) {}
+})();
+setTimeout(function(){ var tb=document.getElementById('tabbar'); if(tb&&!tb.classList.contains('in')) tb.classList.add('in'); }, 1500);
+</script>
+
+<div class="w">
+
+<header class="hdr">
+  <div>
+    <div class="ttl" id="app-title">&nbsp;&nbsp;Turbo调度</div>
+  </div>
+  <div class="hr">
+    <button id="theme-btn" onclick="toggleTheme()">🌙</button>
+    <div id="dot" class="sp"></div>
+  </div>
+</header>
+
+<!-- ── 状态页 ── -->
+<div class="page active" id="page-status">
+<div class="st-hero">
+  <div class="card st-main" id="st-main-card">
+    <div class="st-main-label" id="s-dev">检测中</div>
+    <div class="st-main-sub" id="s-dev-sub">--</div>
+    <div class="st-main-icon" id="st-icon">
+      <svg id="ico-run" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="44" stroke="currentColor" stroke-width="8"/>
+        <path d="M24 51 L40 67 L72 31" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <svg id="ico-stop" viewBox="0 0 100 100" fill="none" style="display:none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="44" stroke="currentColor" stroke-width="8"/>
+        <rect x="33" y="29" width="13" height="38" rx="4" fill="currentColor"/>
+        <rect x="54" y="29" width="13" height="38" rx="4" fill="currentColor"/>
+      </svg>
+    </div>
+  </div>
+  <div class="st-side">
+    <div class="card st-mini">
+      <div class="st-mini-label">Scene调度</div>
+      <div class="st-mini-val st-mini-val-sm" id="s-scene">--</div>
+    </div>
+    <div class="card st-mini">
+      <div class="st-mini-label">云控注入</div>
+      <div class="st-mini-val st-mini-val-sm" id="s-rc">--</div>
+    </div>
+  </div>
+</div>
+
+<div class="card info-card" id="info-card" onclick="toggleInfoPanel()">
+  <div class="info-card-hd">
+    <div class="info-card-hd-title" id="info-card-title">系统信息</div>
+    <div class="info-switch-pill" id="info-switch-pill">
+      <span class="info-switch-pill-icon" id="info-switch-icon">↻</span>
+      <span id="info-switch-label">切换至调度状态</span>
+    </div>
+  </div>
+  <div id="panel-sysinfo">
+    <div class="si-row"><div class="si-label">内核版本</div><div class="si-val mono" id="s-kern">--</div></div>
+    <div class="si-row"><div class="si-label">设备型号</div><div class="si-val" id="s-model">--</div></div>
+    <div class="si-row" style="border-bottom:none"><div class="si-label">芯片型号</div><div class="si-val" id="s-chip">--</div></div>
+  </div>
+  <div id="panel-sched" style="display:none">
+    <div class="si-row"><div class="si-label">Scene调度</div><div class="si-val" id="s2-scene">--</div></div>
+    <div class="si-row"><div class="si-label">云控注入</div><div class="si-val" id="s2-rc">--</div></div>
+    <div class="si-row"><div class="si-label">配置类型</div><div class="si-val" id="s2-type">--</div></div>
+    <div class="si-row"><div class="si-label">当前调速器</div><div class="si-val mono" id="s2-gov">--</div></div>
+    <div class="si-row"><div class="si-label">oiface</div><div class="si-val" id="s2-oiface">--</div></div>
+    <div class="si-row"><div class="si-label">horae</div><div class="si-val" id="s2-horae">--</div></div>
+    <div class="si-row"><div class="si-label">urcc</div><div class="si-val" id="s2-urcc">--</div></div>
+    <div class="si-row" style="border-bottom:none"><div class="si-label">gameopt</div><div class="si-val" id="s2-gameopt">--</div></div>
+  </div>
+</div>
+</div><!-- /page-status -->
+
+<!-- ── 配置页 (短视频包名) ── -->
+<div class="page" id="page-config">
+<div class="card">
+  <div class="ch"><span class="ct">添加短视频包名</span></div>
+  <div class="row" style="margin-bottom:9px"><input type="text" class="inp" id="pkg-input" placeholder="输入应用包名 (例 com.ss.android.ugc.aweme)" autocomplete="off"><button class="btn bpri" id="add-btn" style="flex:none;padding:10px 16px">添加</button></div>
+  <div class="row"><button class="btn" data-pkg="com.ss.android.ugc.aweme">抖音</button><button class="btn" data-pkg="com.smile.gifmaker">快手</button><button class="btn" data-pkg="tv.danmaku.bili">B站</button></div>
+</div>
+<div class="card">
+  <div class="ch"><span class="ct">当前包名列表</span><span class="badge bof" id="package-count">0个包名</span></div>
+  <div class="search-wrap"><svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg><input type="text" class="inp" id="search-input" placeholder="搜索包名..."></div>
+  <div class="package-list" id="package-list"><div class="empty-tip"><svg class="empty-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>正在加载包名列表...</div></div>
+</div>
+<div class="card">
+  <div class="log-header"><span class="ct">操作日志</span><button id="clear-log" class="clear-btn">清空</button></div>
+  <div id="log-content" class="log-area"></div>
+</div>
+</div><!-- /page-config -->
+
+<!-- ── 关于页 ── -->
+<div class="page" id="page-about">
+<div class="card">
+  <div class="ch"><span class="ct">外观设置</span></div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+    <span style="font-size:var(--fs-xs);color:var(--tx2);white-space:nowrap;min-width:52px">玻璃模糊度</span>
+    <input type="range" class="sl2 s0" id="r-opacity" min="0" max="40" step="1" value="13"
+      style="flex:1;height:36px" oninput="onOpacity(this)">
+    <span style="font-family:'SF Mono',Menlo,monospace;font-size:var(--fs-sm);font-weight:700;color:var(--tx);min-width:36px;text-align:right"><span id="v-opacity">13</span><span style="font-size:var(--fs-xs);color:var(--tx3)"> px</span></span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+    <span style="font-size:var(--fs-xs);color:var(--tx2);white-space:nowrap;min-width:52px">背景可见度</span>
+    <input type="range" class="sl2 s0" id="r-bgvis" min="0" max="100" step="1" value="91"
+      style="flex:1;height:36px" oninput="onBgVis(this)">
+    <span style="font-family:'SF Mono',Menlo,monospace;font-size:var(--fs-sm);font-weight:700;color:var(--tx);min-width:36px;text-align:right"><span id="v-bgvis">91</span><span style="font-size:var(--fs-xs);color:var(--tx3)"> %</span></span>
+  </div>
+  <div style="display:flex;gap:7px">
+    <button class="btn bpri" style="flex:1;padding:10px 10px;font-size:var(--fs-sm)" onclick="setBgDefault()">默认壁纸</button>
+    <button class="btn bpri" style="flex:1;padding:10px 10px;font-size:var(--fs-sm)" onclick="setBgSolid()">纯色</button>
+  </div>
+  <div style="font-size:var(--fs-xs);color:var(--tx3);margin-top:10px;line-height:1.6;">
+    0px = 完全透明玻璃 · 调高可增加可读性
+  </div>
+</div>
+
+<div class="card">
+  <div class="ch"><span class="ct">关于</span></div>
+  <div class="row" style="margin-bottom:7px">
+    <button class="btn bpri" id="b-author" onclick="openLink('b-author','https://www.coolapk.com/u/36667900')">作者酷安</button>
+    <button class="btn bpri" id="b-group" onclick="openLink('b-group','https://qun.qq.com/universal-share/share?ac=1&authKey=fbBTMojWZqU6dl9ZgzxJuVMbDpz7i5vglP525ADa9G0QD68Y4msUVZeQ2VIpUkjY&busi_data=eyJncm91cENvZGUiOiI3NjQ1NzAyOTciLCJ0b2tlbiI6ImZWQ3ZRdUlQd2pWQjRyTHJQYk5qMFZnN3NJc09FRXBSYjUxQTZCY0Nac25idHJjMUpheWZFRXBHbHBTOWhqd2siLCJ1aW4iOiIzOTgzMjE1MTQ1In0%3D&data=iI8p004GAXEMHzYscGhAcch1NckHBkb1T0_eWZWK6YCvyCaJw2cZNDXRZ1N146nKYrcaPYfstgLIZEvBMGwC4g&svctype=4&tempid=h5_group_info')">交流群</button>
+  </div>
+  <div class="row" style="margin-top:7px">
+    <button class="btn bpri" id="b-donate" onclick="showDonate()">❤ 捐赠支持</button>
+  </div>
+</div>
+</div><!-- /page-about -->
+
+<!-- ── 云控页: ① 注入/维护 → ② 编辑 (UI版/文本版) → 日志 ── -->
+<div class="page" id="page-cloud">
+<div id="cloud-enable-hint" style="display:none;background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.3);border-radius:var(--r-md);padding:12px 14px;font-size:var(--fs-xs);color:var(--er);line-height:1.6;margin-bottom:10px;"></div>
+
+<!-- ② 配置编辑 (主卡): 编辑方式分段 → 各自的选择/编辑/保存 -->
+<div class="card">
+  <div class="ch"><span class="ct">配置编辑</span><span class="badge bof" id="cloud-badge">--</span></div>
+
+  <!-- 编辑方式分段: UI版(表单) / 文本版(JSON) -->
+  <div id="cloud-mode-seg" style="display:flex;gap:6px;margin-bottom:12px">
+    <button class="cseg-btn active" id="mode-basic-btn" onclick="setCloudMode('basic')">🎛 UI 版 (表单)</button>
+    <button class="cseg-btn" id="mode-pro-btn" onclick="setCloudMode('pro')">📝 文本版 (JSON)</button>
+  </div>
+
+  <!-- [UI 版] 表单编辑本地 cccf -->
+  <div id="cloud-basic">
+    <div class="row" style="margin-bottom:10px">
+      <select id="cf-base-file" class="inp" style="flex:1;padding:10px 12px;font-size:var(--fs-sm)"><option value="">— 选择游戏配置 —</option></select>
+      <button class="btn" id="cf-base-paste" style="flex:none;padding:10px 14px">粘贴 JSON</button>
+      <button class="btn" id="cf-base-refresh" style="flex:none;padding:10px 14px" onclick="loadCloudFiles()">刷新</button>
+    </div>
+    <!-- 粘贴区: WebView 无剪贴板读权限, 改为文本区手动粘贴后解析 -->
+    <div id="cf-base-paste-box" style="display:none;margin-bottom:10px">
+      <textarea id="cf-base-paste-text" class="inp cf-json" rows="6" spellcheck="false" placeholder="长按此处选'粘贴'贴入完整 JSON 配置, 然后点'载入表单'"></textarea>
+      <div class="row" style="margin-top:6px">
+        <button class="btn bpri" id="cf-base-paste-load" style="flex:1;padding:10px 14px;font-size:var(--fs-sm)">载入表单</button>
+        <button class="btn" id="cf-base-paste-cancel" style="flex:none;padding:10px 14px">取消</button>
+      </div>
+    </div>
+    <div id="cf-base-form"></div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn bpri" id="cf-base-save" style="flex:1;padding:12px 14px;font-size:var(--fs-sm)">💾 保存到 cccf</button>
+    </div>
+    <div style="font-size:var(--fs-xs);color:var(--tx3);margin-top:8px;line-height:1.6;">· 表单编辑本地 cccf 模板 (开机注入用)</div>
+
+  </div>
+
+  <!-- [文本版] JSON 编辑数据库 (或本地 cccf) -->
+  <div id="cloud-pro" style="display:none">
+    <div class="row" style="margin-bottom:6px">
+      <select id="cf-db-pkg" class="inp" style="flex:1;padding:10px 12px;font-size:var(--fs-sm)"><option value="">— 选择游戏 (数据库/本地) —</option></select>
+      <button class="btn" id="cf-pro-read-db" style="flex:none;padding:10px 12px">从DB读取</button>
+      <button class="btn" id="cf-pro-read-file" style="flex:none;padding:10px 12px">从cccf读</button>
+    </div>
+    <textarea id="cloud-editor" class="inp" rows="14" spellcheck="false"
+      style="width:100%;padding:12px;font-family:'SF Mono',Menlo,monospace;font-size:var(--fs-xs);line-height:1.6;resize:vertical;box-sizing:border-box;"
+      placeholder="读取后编辑, 或直接粘贴 JSON..."></textarea>
+    <div class="row" style="margin-top:8px">
+      <button class="btn bpri" id="cloud-save-btn" style="flex:1;padding:12px 14px;font-size:var(--fs-sm)">⚡ 注入数据库</button>
+      <button class="btn" id="cloud-save-file-btn" style="flex:1;padding:12px 14px;font-size:var(--fs-sm)">💾 保存到 cccf</button>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button class="btn" id="cf-cloud-fetch-btn" style="flex:1;padding:9px 6px;font-size:var(--fs-xs)">☁ 获取云端配置</button>
+      <button class="btn" id="cf-db-export-btn" style="flex:1;padding:9px 6px;font-size:var(--fs-xs)">📥 导出当前配置</button>
+      <button class="btn" id="cloud-del-btn" style="flex:none;padding:9px 10px;font-size:var(--fs-xs)">🗑 删cccf</button>
+    </div>
+    <div style="font-size:var(--fs-xs);color:var(--tx3);margin-top:8px;line-height:1.6;">· "从DB读取"读数据库当前值 → 编辑 →"⚡注入数据库"写回 (包名取自下拉, 无行自动建档), 重启 COSA 生效<br>· "从cccf读"读本地模板 → "💾保存到cccf"写回<br>· "☁ 获取云端配置"只读官方下发的那一行 (下拉里标 ☁ 的游戏可直接读; 没有 ☁ 的才需要"①清除数据"→ 进一次游戏等云端下发几分钟 → 切回页面列表会自动刷新 → 再读), 读到的配置编辑后点"⚡注入数据库"即成为本地配置 (from_server=0)<br>· "导出当前配置"把读取到的配置存为 .json 到 cccf (UI 版即可编辑)</div>
+  </div>
+</div>
+
+<!-- ① 注入 + 维护 (服务级操作) -->
+<div class="card">
+  <div class="ch"><span class="ct">注入与服务</span></div>
+  <div class="row">
+    <button class="btn bpri" id="cloud-inject-btn" style="flex:1;padding:12px 14px;font-size:var(--fs-sm)">⚡ 执行云控注入 (cccf → 数据库)</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button class="btn" id="cosa-clear-btn" style="flex:1;padding:9px 6px;font-size:var(--fs-xs)">① 清除数据</button>
+    <button class="btn" id="cosa-restart-btn" style="flex:1;padding:9px 6px;font-size:var(--fs-xs)">↻ 重启增强服务</button>
+    <button class="btn" id="cosa-refresh-btn" style="flex:1;padding:9px 6px;font-size:var(--fs-xs)">🔄 刷新数据库配置</button>
+  </div>
+  <div style="font-size:var(--fs-xs);color:var(--tx3);margin-top:6px;line-height:1.6;">· "注入"= cccf 全部配置写入数据库 (开机也自动执行);"①清除数据"= pm clear 重置数据库并撤保护 (获取云端第一步);"重启"= 杀 COSA 拉起四件套;"刷新"= cccf 重新注入</div>
+  <div class="log-header" style="margin-top:10px"><span class="ct">操作日志</span><button id="clear-cloud-log" class="clear-btn">清空</button></div>
+  <div id="cloud-log" class="log-area"></div>
+</div>
+</div><!-- /page-cloud -->
+
+
+<!-- ── 捐赠弹窗 ── -->
+<div id="donate-overlay" onclick="hideDonate()" style="
+  display:none;position:fixed;inset:0;z-index:998; background:rgba(0,0,0,.45); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); align-items:center;justify-content:center;
+">
+  <div id="donate-card" onclick="event.stopPropagation()" style="
+    position:relative; background:rgba(255,255,255,.18); backdrop-filter:blur(var(--blur)) saturate(180%) brightness(1.08); -webkit-backdrop-filter:blur(var(--blur)) saturate(180%) brightness(1.08); border-radius:var(--r-lg); border:1px solid rgba(255,255,255,.55); box-shadow:inset 0 1px 0 rgba(255,255,255,.60),0 24px 60px rgba(0,0,0,.28),0 4px 16px rgba(0,0,0,.12); padding:18px; max-width:min(88vw,360px); width:100%; ">
+    <div style="font-size:var(--fs-xs);font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--ac);margin-bottom:12px;display:flex;align-items:center;gap:4px;">
+      <span style="opacity:.4">◈</span> 捐赠支持
+    </div>
+    <div class="donate-grid">
+      <div class="donate-item">
+        <img src="donate-wechat.png" alt="微信收款码">
+        <span class="dl">微信</span>
+      </div>
+      <div class="donate-item">
+        <img src="donate-alipay.png" alt="支付宝收款码">
+        <span class="dl">支付宝</span>
+      </div>
+    </div>
+    <div style="font-size:var(--fs-xs);color:var(--tx3);margin-top:10px;text-align:center;line-height:1.5;">感谢支持 ♥ · 点击空白处关闭</div>
+  </div>
+</div>
+
+<!-- ── Tab 栏 ── -->
+<div class="tabbar-wrap">
+<nav class="tabbar" id="tabbar">
+  <div class="tab-indicator" id="tab-indicator"></div>
+  <div class="tab active" id="tab-status" onclick="switchTab('status')">
+    <div class="tab-dot" id="tab-dot-status"></div>
+    <div class="tab-icon">☰</div>
+    <div class="tab-label">状态</div>
+  </div>
+  <div class="tab" id="tab-config" onclick="switchTab('config')">
+    <div class="tab-icon">⚙</div>
+    <div class="tab-label">配置</div>
+  </div>
+  <div class="tab" id="tab-cloud" onclick="switchTab('cloud')">
+    <div class="tab-icon">⚡</div>
+    <div class="tab-label">云控</div>
+  </div>
+  <div class="tab" id="tab-about" onclick="switchTab('about')">
+    <div class="tab-icon">ℹ</div>
+    <div class="tab-label">关于</div>
+  </div>
+</nav>
+</div>
+
+</div><!-- /.w -->
+
+<script src="core.js"             defer></script>
+<script src="status-page.js"     defer></script>
+<script src="pkg-page.js"        defer></script>
+<script src="cloud-io.js"        defer></script>
+<script src="cloud-form.js"      defer></script>
+<script src="cloud-page.js"      defer></script>
+<script src="settings-page.js"   defer></script>
+<script src="nav.js"             defer></script>
+</body>
+</html>

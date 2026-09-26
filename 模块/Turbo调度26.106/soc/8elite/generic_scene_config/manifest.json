@@ -1,0 +1,12 @@
+{
+  "version": "Turbo_8E",
+  "versionCode": 2693,
+  "author": "SCENE9",
+  "projectUrl": "http://vtools.omarea.com/",
+  "features": {
+    "strict": true,
+    "pedestal": true,
+    "reboot": false,
+    "fas": true
+  }
+}

@@ -112,4 +112,4 @@ adb pull /system/lib64/libsqlite.so cosa-rs/prebuilt/libsqlite3.so
 | `KsuWebUI.apk` | WebUI 载体应用([a13e300/KsuWebUI](https://github.com/a13e300/KsuWebUI)) | 第三方,未纳入本仓库(随发行版 zip 提供) |
 | `模块/<版本>/<SoC>/` | 各平台 Scene 调度与云控模板 | 基于官方配置整理 |
 
-仓库内**本项目的代码**以 **MIT** 许可发布(见 LICENSE):可自由使用、修改、再打包、商用,也可以闭源 —— 只需保留版权与许可声明。上表中的第三方组件版权归各自作者,不受本许可覆盖。
+仓库内**本项目的代码**以 **GPL-3.0** 发布(见 LICENSE):再分发或修改后的版本必须同样以 GPL-3.0 开源,且不得附加额外限制;上表中的第三方组件版权归各自作者,不在 GPL-3.0 覆盖范围内。
