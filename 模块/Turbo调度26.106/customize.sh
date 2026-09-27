@@ -17,7 +17,8 @@ ui_print() {
   echo "$1"
   [ -f "/proc/ksu" ] && {
     echo "[$(date "+%m-%d %T")] $1" >> "$LOG_FILE"
-    log -p i -t "KSuModule" "$1"
+    # 用绝对路径调系统 log: 本脚本 source 了 common.sh, 它的 log() 函数会遮蔽命令
+    /system/bin/log -p i -t "KSuModule" "$1"
   }
   return 0   # 末尾 [ -f /proc/ksu ] 在 Magisk 环境返回 1, 会污染调用方的 && || 链
 }
@@ -89,7 +90,7 @@ clean_after_install() {
     # 仅部署本机型模板 (旧版全机型混拷会互相覆盖); 不做备份, 直接以机型模板重建
     rm -rf "$MODPATH/cccf" 2>/dev/null
     mkdir -p "$MODPATH/cccf" 2>/dev/null
-    soc_dir=$(. "$SCRIPTS_DIR/common.sh"; get_soc_dir)
+    soc_dir=$(get_soc_dir)
     if [ -n "$soc_dir" ] && [ -d "$MODPATH/soc/$soc_dir/oplus_cccf" ]; then
       cp -af "$MODPATH/soc/$soc_dir/oplus_cccf/." "$MODPATH/cccf/" 2>/dev/null
       ui_print "  + 云控模板已部署 ($soc_dir)"
