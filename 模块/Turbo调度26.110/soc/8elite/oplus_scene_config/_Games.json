@@ -1,0 +1,28 @@
+{
+  "friendly": "所有游戏",
+  "call": [
+    ["@limiter", "NONE"]
+  ],
+  "modes": [
+    {
+      "mode": ["powersave"],
+      "call": [
+      ]
+    },
+    {
+      "mode": ["balance"],
+      "call": [
+      ]
+    },
+    {
+      "mode": ["performance"],
+      "call": [
+      ]
+    },
+    {
+      "mode": ["fast"],
+      "call": [
+      ]
+    }
+  ]
+}

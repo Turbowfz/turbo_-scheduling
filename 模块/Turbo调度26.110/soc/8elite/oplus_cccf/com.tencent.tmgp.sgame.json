@@ -1,0 +1,236 @@
+{
+  "package_name": "com.tencent.tmgp.sgame",
+  "type_id": null,
+  "feature_flag": "20473973329",
+  "cpu_config": {
+    "loading": {
+      "boost": "",
+      "time": 5000
+    },
+    "start": {
+      "boost": "",
+      "time": 1000
+    },
+    "logging": {
+      "boost": "11,6,6,5",
+      "time": 2000
+    }
+  },
+  "gpu_config": "",
+  "io_config": "",
+  "dynamic_resolution": "",
+  "launch_boost": "",
+  "usage_power_ratio": {
+    "f": 2048
+  },
+  "memory_clear": "",
+  "frameBoost": "",
+  "refresh_rate": "",
+  "gpa_config": {
+    "60": {
+      "cl": 3,
+      "ch": 9,
+      "sm": 6,
+      "gm": 5,
+      "gf": 2,
+      "fast": "95,95,0,0,110",
+      "dpcpus": "0-5",
+      "sfcpus": "0-5",
+      "cpuload": "1,2,2,0",
+      "busythres": "80,70,2,90,80,3"
+    },
+    "90": {
+      "cl": 3,
+      "ch": 10,
+      "sm": 6,
+      "gm": 5,
+      "gf": 2,
+      "fast": "95,95,0,0,110",
+      "dpcpus": "0-5",
+      "sfcpus": "0-5",
+      "cpuload": "1,2,2,0",
+      "busythres": "80,70,2,90,80,3"
+    },
+    "120": {
+      "cl": -1,
+      "ch": 10,
+      "sm": -1,
+      "gm": 6,
+      "gf": -1,
+      "fast": "95,95,0,0,110",
+      "dpcpus": "0-5",
+      "sfcpus": "0-5",
+      "cpuload": "1,2,2,0",
+      "busythres": "80,70,2,90,80,3",
+      "sft": 4,
+      "es4g": {
+        "state": true,
+        "tcount": 4,
+        "clist": "5,7",
+        "isolate": "224,0",
+        "partial": false,
+        "delay": 30000,
+        "fps": 120,
+        "app": 1
+      },
+      "mema": {
+        "beta": "45",
+        "mode": "2",
+        "tl": "0,85,350,90",
+        "custom": {
+          "7": {
+            "beta": 55,
+            "mode": 0,
+            "tl": "0,85,500,90"
+          },
+          "0-4": "60,0",
+          "5-6": "45,0"
+        }
+      }
+    }
+  },
+  "sdk_config": "",
+  "created_at": "2026-07-17 19:35:27",
+  "modified_at": "2025-11-25 17:07:35",
+  "other": "\"24851\"_false&",
+  "from_server": 1,
+  "data_collector": "",
+  "simple_client": {
+    "fg": {
+      "decision": [
+        {
+          "type": "ega_config",
+          "battery": "-2.0",
+          "value": "44000,900,850",
+          "perf_value": "45000,930,900",
+          "enable": "1"
+        },
+        {
+          "type": "game_switch_enable",
+          "perf_value": "9",
+          "autoTouchRate": false
+        },
+        {
+          "type": "ogfr_enable",
+          "sf_cf_enable": "true",
+          "isStrictMode": "true",
+          "60": "1",
+          "90": "1",
+          "120": "1",
+          "144": "2",
+          "165": "2"
+        }
+      ],
+      "sf_tf": "1,40",
+      "dy_te": 1
+    },
+    "bg": {
+      "decision": [
+        {
+          "type": "ega_config",
+          "enable": "0"
+        }
+      ],
+      "sf_tf": "0,0",
+      "dy_te": 0
+    }
+  },
+  "cool_ex": "",
+  "lighting_start": "",
+  "prison": "",
+  "cosa_version": "16.0.69",
+  "tgpa_client": "",
+  "game_zone": {
+    "recognize_interval": "8000",
+    "wake_up_times": "10",
+    "key_thread_ux": "2",
+    "white_list": [
+      "tmgp.sgame",
+      "UnityChoreograp"
+    ],
+    "bind_core": "1",
+    "bind_list": {
+      "Job.worker 0": "p_10",
+      "Job.worker 1": "p_8",
+      "UnityMain": "g_11",
+      "UnityGfxDeviceW": "g_10",
+      "Thread-": "g_10",
+      "NativeThread": "g_10",
+      "AudioTrack": "g_10"
+    },
+    "pipeline": {
+      "3": "Job.worker 1",
+      "4": "Job.worker 0",
+      "5": "__render__",
+      "7": "UnityMain"
+    },
+    "fixed_critical_task": [
+      "UnityGfxDeviceW",
+      "UnityMain"
+    ],
+    "uad_ux": "1"
+  },
+  "bind_core": "",
+  "decision": "",
+  "control": "",
+  "game_loading": "",
+  "game_loading_finish": "",
+  "game_start": "",
+  "game_stop": "",
+  "game_status": "",
+  "game_switch": "",
+  "game_config": "",
+  "perf_mode": "",
+  "target_fps": "",
+  "thermal_frame": {
+    "90": {
+      "balance_nl": "46,60",
+      "highperf_nl": "49,60"
+    },
+    "120": {
+      "balance_nl": "44,90,46,60",
+      "highperf_nl": "48,90,49,60"
+    },
+    "144": {
+      "balance_nl": "42,120,44,90,46,60",
+      "highperf_nl": "48,120,49,60",
+      "ternary": false
+    }
+  },
+  "resv_1": "",
+  "resv_2": "",
+  "resv_3": "",
+  "resv_4": "",
+  "resv_5": "",
+  "resv_6": "",
+  "resv_7": {
+    "autoSystraceCollectEnabled": false,
+    "latencyThreshold": 23,
+    "latencyIntervalThreshold": 60000
+  },
+  "resv_8": "",
+  "resv_9": "",
+  "resv_10": "",
+  "resv_11": "",
+  "resv_12": "",
+  "resv_13": {
+    "targetFrameInsertFPS": 120,
+    "maxLowFPS": 24,
+    "lowFPSLimit": 30,
+    "minLowFPS": 10,
+    "thermalLimit": 49,
+    "thermalLevelLimit": 12,
+    "validThermalLevel": 11,
+    "sr_hdr_normal": 48,
+    "sr_hdr_low": 48,
+    "sr_hdr_high": 51,
+    "sr_hdr_x": 51
+  },
+  "unity_game_boost": "",
+  "fps_stabilizer": {
+    "boostStep": "1,1.4",
+    "freqStep": "11,9,7,4,11,10,7,6",
+    "temp": 470
+  },
+  "bg_update": ""
+}

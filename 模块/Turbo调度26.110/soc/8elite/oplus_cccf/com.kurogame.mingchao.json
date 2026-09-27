@@ -1,0 +1,129 @@
+{
+  "package_name": "com.kurogame.mingchao",
+  "type_id": null,
+  "feature_flag": "72353792",
+  "cpu_config": "",
+  "gpu_config": "",
+  "io_config": "",
+  "dynamic_resolution": "",
+  "launch_boost": "",
+  "usage_power_ratio": "",
+  "memory_clear": "",
+  "frameBoost": "",
+  "refresh_rate": "",
+  "gpa_config": {
+    "cl": 6,
+    "ch": 10,
+    "sm": 6,
+    "gm": 7,
+    "gf": 4,
+    "fast": "95,95,0,0,110",
+    "dpcpus": "0-5",
+    "sfcpus": "0-5"
+  },
+  "sdk_config": "",
+  "created_at": "2026-07-17 19:35:27",
+  "modified_at": "2025-12-25 21:34:24",
+  "other": "\"24851\"_false&",
+  "from_server": 1,
+  "data_collector": "",
+  "simple_client": {
+    "fg": {
+      "control": {
+        "gpu_control": [
+          "967000000",
+          "222000000",
+          "1",
+          "1"
+        ]
+      },
+      "decision": [
+        {
+          "type": "game_switch_enable",
+          "value": "4",
+          "perf_value": "4"
+        }
+      ]
+    },
+    "bg": {
+      "decision": [
+        {
+          "type": "game_switch_enable",
+          "value": "0"
+        }
+      ],
+      "control": "-1"
+    }
+  },
+  "cool_ex": "",
+  "lighting_start": "",
+  "prison": "",
+  "cosa_version": "16.0.66",
+  "tgpa_client": "",
+  "game_zone": {
+    "recognize_interval": "1000",
+    "wake_up_times": "10",
+    "key_thread_ux": "2",
+    "key_worker_ux": "2",
+    "white_list_ux": "2",
+    "uc_thread": "TaskGraphHP",
+    "uc_min": "310",
+    "uc_max": "1024",
+    "pipeline": {
+      "7": "GameThread",
+      "5": "RHIThread",
+      "4": "RenderThread"
+    },
+    "bind_core": "1",
+    "bind_list": {
+      "GameThread": "g_0",
+      "RHIThread": "g_0"
+    }
+  },
+  "bind_core": "",
+  "decision": "",
+  "control": "",
+  "game_loading": "",
+  "game_loading_finish": "",
+  "game_start": "",
+  "game_stop": "",
+  "game_status": "",
+  "game_switch": "",
+  "game_config": "",
+  "perf_mode": "",
+  "target_fps": "",
+  "thermal_frame": {
+    "60": {
+      "balance_nl": "44,45,46,30",
+      "highperf_nl": "49,45,51,30",
+      "sysperf_nl": "49,45,51,30"
+    },
+    "90": {
+      "balance_nl": "44,60,46,30",
+      "highperf_nl": "48,60,51,30",
+      "sysperf_nl": "48,60,51,30"
+    },
+    "120": {
+      "balance_nl": "44,90,45,60,46,30",
+      "highperf_nl": "47,90,48,60,51,30",
+      "sysperf_nl": "47,90,48,60,51,30",
+      "ternary": false
+    }
+  },
+  "resv_1": "",
+  "resv_2": "",
+  "resv_3": "",
+  "resv_4": "",
+  "resv_5": "",
+  "resv_6": "",
+  "resv_7": "",
+  "resv_8": "",
+  "resv_9": "",
+  "resv_10": "",
+  "resv_11": "",
+  "resv_12": "",
+  "resv_13": "",
+  "unity_game_boost": "",
+  "fps_stabilizer": "",
+  "bg_update": ""
+}
