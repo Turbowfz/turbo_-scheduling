@@ -43,10 +43,4 @@ if pm list packages "$_dev_pkg" 2>/dev/null | grep -q "$_dev_pkg"; then
   pm uninstall --user 0 "$_dev_pkg" >/dev/null 2>&1
   command -v ksud >/dev/null 2>&1 && ksud debug set.uninstall "$_dev_pkg" >/dev/null 2>&1
 fi
-# ── 已下线的 AsoulOpt 子模块 (老版本装过的话) ──
-if [ -d /data/adb/modules/asoul_affinity_opt ]; then
-  ulog "- 移除 AsoulOpt 子模块..."
-  rm -rf /data/adb/modules*/asoul_affinity_opt 2>/dev/null
-  command -v ksud >/dev/null 2>&1 && ksud module uninstall asoul_affinity_opt >/dev/null 2>&1
-fi
 rm -rf /data/adb/scrc /data/adb/turbo/cccf_backup 2>/dev/null

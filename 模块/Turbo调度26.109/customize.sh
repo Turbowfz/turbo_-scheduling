@@ -121,12 +121,7 @@ clean_after_install() {
     done
     rm -rf "$MODPATH/soc" 2>/dev/null
   fi
-  # 移除已随包下线的 AsoulOpt 子模块 (老版本装过的话) 与残留源文件
-  if [ -d /data/adb/modules/asoul_affinity_opt ]; then
-    rm -rf /data/adb/modules*/asoul_affinity_opt 2>/dev/null
-    command -v ksud >/dev/null 2>&1 && ksud module uninstall asoul_affinity_opt >/dev/null 2>&1
-    ui_print "  - 已移除 AsoulOpt 子模块"
-  fi
+  # 只清理自己模块目录内的旧版残留; 不碰设备上独立安装的 AsoulOpt (那是别人的模块)
   rm -rf "$MODPATH/modules" "$MODPATH/cccf_backup" "$MODPATH/AsoulOpt.zip" 2>/dev/null
   # 清理旧版破坏神残留 (v26.104 起模块不再提供磁贴 APK): 磁贴挂载源 + 根目录 APK + 旧脚本
   # 标志文件无条件清 (磁贴包可能早就被卸载, 只按"包装没装"判断会漏掉 /data/adb/turbo 下的残留标志)

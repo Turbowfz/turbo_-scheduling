@@ -1,13 +1,8 @@
 {
-  "package_name": "com.tencent.tmgp.dfm",
+  "package_name": "com.tencent.tmgp.cf",
   "type_id": null,
-  "feature_flag": "5244944",
-  "cpu_config": {
-    "start": {
-      "boost": "",
-      "time": 10000
-    }
-  },
+  "feature_flag": "72354305",
+  "cpu_config": "",
   "gpu_config": "",
   "io_config": "",
   "dynamic_resolution": "",
@@ -18,69 +13,41 @@
   "refresh_rate": "",
   "gpa_config": {
     "60": {
-      "cl": 2,
-      "ch": 9,
-      "sm": -1,
-      "gm": 5,
-      "gf": 0,
-      "fast": "95,95,0,0,110",
-      "dpcpus": "0-5",
-      "sfcpus": "0-5"
-    },
-    "90": {
-      "cl": 3,
+      "cl": 4,
       "ch": 10,
       "sm": 6,
       "gm": 5,
       "gf": 2,
       "fast": "95,95,0,0,110",
-      "dpcpus": "0-5",
-      "sfcpus": "0-5"
+      "dpcpus": "0-4",
+      "sfcpus": "0-4"
     },
-    "120": {
+    "90": {
       "cl": 4,
-      "ch": 11,
+      "ch": 10,
       "sm": 6,
-      "gm": 6,
+      "gm": 5,
       "gf": 2,
       "fast": "95,95,0,0,110",
-      "dpcpus": "0-5",
-      "sfcpus": "0-5"
-    },
-    "144": {
-      "cl": -1,
-      "ch": 11,
-      "gm": 6,
-      "gf": -1,
       "dpcpus": "0-4",
-      "sfcpus": "0-4",
-      "es4g": {
-        "state": true,
-        "isolate": "128,0",
-        "clist": "6,7",
-        "partial": false,
-        "fps": 120
-      },
-      "mema": {
-        "mode": "2",
-        "tl": "0,80,300,90,500,95"
-      }
+      "sfcpus": "0-4"
     },
-    "165": {
-      "cl": -1,
-      "ch": -1,
-      "gm": -1,
-      "gf": -1,
-      "mtl": "80,80",
+    "120": {
+      "cl": 3,
+      "ch": 12,
+      "sm": 6,
+      "gm": 7,
+      "gf": 2,
+      "smt": 2,
       "fast": "95,95,0,0,110",
-      "dpcpus": "0-5",
-      "sfcpus": "0-5"
+      "dpcpus": "0-4",
+      "sfcpus": "0-4"
     }
   },
   "sdk_config": "",
-  "created_at": "2026-05-26 22:21:55",
+  "created_at": "2026-09-14 01:27:18",
   "modified_at": "2025-11-25 17:07:29",
-  "other": "24851_false&",
+  "other": "\"24851\"_false&",
   "from_server": 1,
   "data_collector": "",
   "simple_client": {
@@ -90,6 +57,16 @@
           "type": "game_switch_enable",
           "perf_value": "9",
           "autoTouchRate": false
+        },
+        {
+          "type": "ogfr_enable",
+          "sf_cf_enable": "true",
+          "isStrictMode": "true",
+          "60": "1",
+          "90": "1",
+          "120": "1",
+          "144": "1",
+          "165": "1"
         }
       ]
     },
@@ -105,34 +82,27 @@
   "cool_ex": "",
   "lighting_start": "",
   "prison": "",
-  "cosa_version": "16.0.66",
+  "cosa_version": "16.0.2",
   "tgpa_client": "",
   "game_zone": {
     "recognize_interval": "8000",
     "wake_up_times": "10",
     "key_thread_ux": "2",
+    "key_worker_ux": "2",
+    "white_list_ux": "2",
     "white_list": [
-      "GameThread",
-      "RenderThread",
-      "Thread",
-      "TaskGraphHP",
-      "NativeThread",
-      "AudioTrack",
-      "MainThread-UE4",
-      "HeapTaskDaemon",
-      "SlateLoading1",
-      "PoolThread",
-      "AuxiliaryRHI"
+      "UnityChoreograp",
+      "FMOD mixer thre",
+      "AsyncReadManage"
     ],
-    "bind_core": "1",
     "pipeline": {
-      "6": "RenderThread",
-      "7": "GameThread"
+      "7": "UnityMain",
+      "5": "UnityGfxDeviceW"
     },
     "bind_list": {
-      "GameThread": "g_11",
-      "RenderThread": "g_0",
-      "Thread-": "g_0"
+      "UnityMain": "g_0",
+      "UnityGfxDeviceW": "g_0",
+      "Thread-": "g_10"
     },
     "uad_ux": "1"
   },
@@ -145,11 +115,7 @@
   "game_stop": "",
   "game_status": "",
   "game_switch": "",
-  "game_config": {
-    "mingap": 2,
-    "numbusy": 0,
-    "penalty": 3
-  },
+  "game_config": "",
   "perf_mode": "",
   "target_fps": "",
   "thermal_frame": {
@@ -161,14 +127,9 @@
       "balance_nl": "44,90,46,60",
       "highperf_nl": "48,90,49,60"
     },
-    "144": {
-      "balance_nl": "42,120,44,90,46,60",
-      "highperf_nl": "47,120,48,90,49,60",
-      "ternary": false
-    },
     "165": {
       "balance_nl": "42,120,44,90,46,60",
-      "highperf_nl": "47,120,48,90,49,60",
+      "highperf_nl": "46,120,48,90,49,60",
       "ternary": false
     }
   },
@@ -187,9 +148,9 @@
   "resv_13": "",
   "unity_game_boost": "",
   "fps_stabilizer": {
-    "boostStep": "1.1,1.3",
-    "freqStep": "15,7,10,3,15,9,11,6",
-    "temp": 470
+    "boostStep": "0.9,1.1,1.5",
+    "freqStep": "11,5,7,2,11,6,7,3,11,7,7,5",
+    "temp": 450
   },
   "bg_update": ""
 }
