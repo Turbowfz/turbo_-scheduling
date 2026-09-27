@@ -15,7 +15,10 @@ FLAG_DIR="/data/adb/turbo"
 SERVICE_DIR="/data/adb/service.d"
 DAEMON_FILE="$SERVICE_DIR/.turbo_restore.sh"
 
-if [ -f "$FLAG_DIR/sc_installed" ]; then
+# ── 机型门禁: 非骁龙 8 系不写卸载还原守护 (防手动塞模块+造标志的绕过) ──
+. "$MODDIR/scripts/common.sh" 2>/dev/null
+
+if [ -f "$FLAG_DIR/sc_installed" ] && is_supported_soc; then
   # 注意: 备份 Scene 原始配置只在安装时 scene_config.sh create_backup 做 ——
   # post-fs-data 阶段 CE 存储尚未解锁, 在这里 cp /data/data/... 必然失败且被吞
   # (旧版在此的"兜底备份"是假安全感, 已删除)

@@ -17,6 +17,17 @@ chmod 777 "$MODDIR/bin/inject" 2>/dev/null; chmod 755 "$MODDIR/bin/cosa" 2>/dev/
 # 符号链接丢了就补上, 否则 cosa 连启动都起不来 (覆盖安装/模块目录被重建时可能丢)
 [ -e "$MODDIR/bin/libsqlite3.so" ] || ln -sf /system/lib64/libsqlite.so "$MODDIR/bin/libsqlite3.so" 2>/dev/null
 
+# ── 机型门禁 (第二道): 非骁龙 8 系不启动任何功能, 并请求管理器移除模块 ──
+# 安装器会拦, 但拦不住"手动塞模块目录 + 造标志"这类绕过; 这里是兜底。
+# remove 是 KernelSU/Magisk 的标准标记文件, 下次开机管理器自动移除模块。
+if ! is_supported_soc; then
+  log "[门禁] 非骁龙 8 系机型, 停用本模块 (已写 remove 标记, 下次开机由管理器移除)"
+  touch "$MODDIR/remove" 2>/dev/null
+  rm -rf "$FLAG_DIR" 2>/dev/null
+  sed -i "s/^description=.*/description=机型不支持, 已停用/" "$MODDIR/module.prop" 2>/dev/null
+  exit 0
+fi
+
 # ── description 开机自愈: 安装时的 sed 改的是解包临时目录, 会被 KSU 用 zip 原始
 #    module.prop 覆盖 (永远显示"重启后生效")。每次开机按标志文件刷新一次 ──
 update_description() {

@@ -65,6 +65,12 @@ validate_soc() {
     return 0
   }
 
+  # 兜底裁决走公共库的 is_supported_soc (唯一匹配清单): 上面的逐档显示若漏了新匹配, 这里仍放行
+  is_supported_soc && {
+    ui_print "+ 受支持的骁龙 8 系 (${soc_model:-$platform})"
+    return 0
+  }
+
   ui_print "! 仅支持骁龙8 Gen3 / 8 Elite / 8 Gen5 / 8 Elite Gen5"
   ui_print "  Platform: ${platform:-未知}"
   ui_print "  SoC: ${soc_model:-未知}"
@@ -213,6 +219,11 @@ key=$(wait_key 60 KEY_VOLUMEUP)
 
 validate_soc || {
   ui_print "! 设备验证未通过，终止安装"
+  # 自清理: KSU 先把整个 zip 解压到 staging 再跑本脚本, exit 1 只终止脚本 ——
+  # 残留的完整模块会被管理器显示 (开机还会被写上"无任何功能，建议卸载"的描述)。
+  # 设备上若有门禁加入前的老版本残留也一并移除 (支持的机型永远不会走到这里)。
+  rm -rf "$MODPATH" 2>/dev/null
+  rm -rf /data/adb/modules/Turbo_Scheduling /data/adb/turbo 2>/dev/null
   exit 1
 }
 

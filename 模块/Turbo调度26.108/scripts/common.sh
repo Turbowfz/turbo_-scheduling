@@ -66,8 +66,25 @@ restore_scene_now() {
   return 0
 }
 
+# ── 支持的 SoC (骁龙 8 Gen3 / 8 Elite / 8 Gen5 / 8 Elite Gen5) ──
+# 全模块唯一的机型匹配清单: 安装器 validate_soc 的兜底裁决、开机门禁都用它。
+# 新增支持机型时只改这里 (platform 三选一, 或 soc.model 含对应数字段)。
+is_supported_soc() {
+  local p=$(getprop ro.board.platform)
+  local m=$(getprop ro.soc.model)
+  case "$p" in
+    pineapple|sun|canoe) return 0 ;;
+  esac
+  case "$m" in
+    *8650*|*8750*|*8845*|*8850*) return 0 ;;
+  esac
+  return 1
+}
+
 # ── SoC 机型目录 (8gen3 / 8elite / 8gen5 / 8elitegen5) ──
+# 未知机型返回空串: 调用方按空处理 (不部署模板), 不再默认发 8gen3
 get_soc_dir() {
+  is_supported_soc || return 0
   local p=$(getprop ro.board.platform)
   local m=$(getprop ro.soc.model)
   case "$p" in
@@ -82,19 +99,6 @@ get_soc_dir() {
          *8850*)   echo "8elitegen5" ;;
          *8845*)   echo "8gen5" ;;
          *)        echo "8gen3" ;;
-       esac ;;
-  esac
-}
-
-# ── 8 Gen5 系列 (SM8845/SM8850/canoe) 判定: oplus版目录暂无其配置, 仅用于提示分支 ──
-is_8gen5() {
-  local p=$(getprop ro.board.platform)
-  local m=$(getprop ro.soc.model)
-  case "$p" in
-    canoe) return 0 ;;
-    *) case "$m" in
-         *8845*|*8850*) return 0 ;;
-         *) return 1 ;;
        esac ;;
   esac
 }
