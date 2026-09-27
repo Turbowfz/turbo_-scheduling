@@ -1,6 +1,3 @@
-#26.106
+#26.107
 
-- 模块结构整理: 4 个机型目录 (8gen3/8elite/8gen5/8elitegen5) 归拢到 soc/ 下, 模块根目录更清爽; 安装时云控模板与 Scene 配置照常从对应机型目录部署, 部署完照旧清理, 老版本升级时旧位置的残留也会清掉
-- 移除随包的 AsoulOpt 子模块及其安装脚本: 覆盖安装时自动卸载老版本装过的 asoul_affinity_opt, 卸载模块时同样清理
-- 移除覆盖安装前的 cccf 备份 (cccf_backup): 安装时直接以本机型模板重建 cccf, 老版本留下的 cccf_backup 目录会一并清掉
-- 许可恢复为 GPL-3.0 (zip 内随附 LICENSE): 再分发或修改后的版本需同样以 GPL-3.0 开源, 不得附加额外限制
+- 修复安装日志: ui_print 改用 /system/bin/log 绝对路径 —— 之前 source 公共库后其同名 log() 函数遮蔽了系统命令, logcat 日志一直没写上
