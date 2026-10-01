@@ -79,7 +79,6 @@ window.addEventListener('load', () => {
   let raf = 0, lastFrame = 0, flTries = 0;
   let frameAvg = 16, degrade = 0; /* 自适应降级: 0 正常, 1 冻结宽度, 2 去模糊, 3 弹簧刚度加倍提前交 CSS */
   let prevT = 0, prevX = 0, lastT = 0, lastX = 0;   /* 速度采样: 倒数两次 move */
-  let pendingTab = '';
 
   function cacheRects() {
     visNames = []; visRects = [];
@@ -196,21 +195,20 @@ window.addEventListener('load', () => {
     ind.style.transition = '';
     ind.classList.remove('grabbed');
     stopLoop();
-    if (pendingTab) { const t = pendingTab; pendingTab = ''; switchTab(t); }
+    /* 落定判定必须按"实际停下的位置"取档 —— 早先按速度做衰减预估, 预测值常与弹簧
+       真正停下的档位不一致, 于是落定后又被 switchTab 拽回原档 (表现为滑块突然从原位再移一次) */
+    const landIdx = nearestIdx(tbLeft + sim.pos + sim.wid / 2);
+    const landTab = visNames[landIdx];
+    if (landTab && landTab !== TAB_NAMES[_curTab]) switchTab(landTab);
   }
 
-  /* 甩动力度 → 目标档 (用于提前切页): 沿速度做衰减扫描, 落点决定 tab */
+  /* 释放入弹簧: 初速决定滑行距离 (无档位上限), 目标每帧跟随最近档, 边缘缓冲负责拦住 */
   function beginFlight(vpx) {
     mode = 'flight'; flTries = 0;
     sim.vel = vpx;                       /* px/s, 甩动力度直接进弹簧 */
     sim.over = 14;                       /* 边缘缓冲区: 最远冲出 14px */
     sim.min = visRects[0].left - tbLeft;
     sim.max = visRects[visRects.length - 1].right - tbLeft - sim.wid;
-    let stop = sim.pos, v = vpx;
-    for (let i = 0; i < 40 && Math.abs(v) > P.SETTLE_V; i++) { v *= 0.9; stop += v * 0.016; }
-    const cx = Math.max(visRects[0].left + sim.wid / 2,
-               Math.min(visRects[visRects.length - 1].right - sim.wid / 2, stop + sim.wid / 2));
-    pendingTab = visNames[nearestIdx(cx)] || TAB_NAMES[_curTab];
   }
 
   tabbar.addEventListener('touchstart', e => {
@@ -225,7 +223,7 @@ window.addEventListener('load', () => {
     const onSlider = tx >= ir.left && tx <= ir.right && ty >= ir.top && ty <= ir.bottom;
     /* 按住滑块 或 飞行中任意位置按住: 截停当前运动, 转入抓取 */
     if (onSlider || mode === 'flight') {
-      stopLoop(); mode = 'idle'; pendingTab = '';
+      stopLoop(); mode = 'idle';
       /* 抓取态的 rect 含 scale(1.28) 缩放, 不能当布局值用 —— 用内联样式(未缩放)初始化,
          否则抓取瞬间位置/宽度会被缩放值污染而跳一下 */
       const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
@@ -307,12 +305,14 @@ window.addEventListener('load', () => {
     if (!el) return;
     ind.style.transition = 'none';
     ind.classList.add('grabbed');
+    ind.style.transform = '';      /* 清掉拖拽/飞行残留的位移, 否则点击后滑块会带着旧偏移 */
     ind.style.left = el.offsetLeft + 'px';
     ind.style.width = el.offsetWidth + 'px';
     void ind.offsetWidth;
     ind.style.transition = 'left .38s cubic-bezier(.3,1.6,.5,1), width .38s cubic-bezier(.3,1.6,.5,1), transform .3s cubic-bezier(.3,1.65,.45,1)';
+    window._tabbarAnimating = true;   /* 这段滑动期间不让状态刷新抢 ksu 通道 (会造成卡顿) */
     switchTab(name);
-    setTimeout(() => { ind.classList.remove('grabbed'); ind.style.transition = ''; }, 420);
+    setTimeout(() => { ind.classList.remove('grabbed'); ind.style.transition = ''; window._tabbarAnimating = false; }, 420);
   });
 })();
 
