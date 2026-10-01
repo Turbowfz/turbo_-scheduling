@@ -13,6 +13,7 @@ function tapVibrate() { haptic(); }
 function refreshWhenIdle(fn, delay) {
   setTimeout(function tick() {
     if (window._tabbarAnimating) { setTimeout(tick, 120); return; }
+    try { (window.__navLog = window.__navLog || []).push(Math.round(performance.now()) + ' refreshFire'); } catch (_) {}
     try { fn(); } catch (_) {}
   }, delay || 0);
 }
@@ -21,7 +22,8 @@ function moveIndicator(tabEl) {
   if (_tabbarDragging) return;
   const ind = document.getElementById('tab-indicator');
   if (!ind || !tabEl) return;
-  ind.style.left  = tabEl.offsetLeft + 'px';
+
+  try { (window.__navLog = window.__navLog || []).push(Math.round(performance.now()) + ' moveInd tab=' + tabEl.id + ' offL=' + tabEl.offsetLeft + ' offW=' + tabEl.offsetWidth + ' tbLeft=' + document.getElementById('tabbar').getBoundingClientRect().left.toFixed(1) + ' indRectL=' + ind.getBoundingClientRect().left.toFixed(1)); } catch (_) {}  ind.style.left  = tabEl.offsetLeft + 'px';
   ind.style.width = tabEl.offsetWidth + 'px';
 }
 /* 恢复滑块样式表过渡 (清除拖拽遗留的内联 transition:none) */
@@ -34,6 +36,7 @@ window.switchTab = function(name) {
   const idx = TAB_NAMES.indexOf(name);
   if (idx < 0) return;
   _curTab = idx;
+  try { (window.__navLog = window.__navLog || []).push(Math.round(performance.now()) + " switchTab " + name); } catch (_) {}
   _indTouched = true;
   restoreIndicatorTransition();
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -57,6 +60,7 @@ window.addEventListener('load', () => {
      那时再回写会把滑块从拖动/飞行/已切换的档位拽回"状态页"; 它顺手恢复的样式表过渡还会让
      落定时的 left 写入变成动画 (先闪回抓取前的位置, 再滑向目标) —— 真机闪回的元凶。
      另外: 拖拽/飞行期间的内联 transition:none 是"落定原子性"的前提, 谁都不能提前清掉 */
+  try { (window.__navLog = window.__navLog || []).push(Math.round(performance.now()) + ' load.init touched=' + _indTouched + ' cur=' + TAB_NAMES[_curTab] + ' indL=' + (document.getElementById('tab-indicator') || {}).style.left + ' trans=' + (document.getElementById('tab-indicator') || {}).style.transition); } catch (_) {}
   if (_indTouched) return;
   const firstTab = document.getElementById('tab-status');
   const ind = document.getElementById('tab-indicator');
@@ -75,6 +79,8 @@ window.addEventListener('load', () => {
   const ind    = document.getElementById('tab-indicator');
   if (!tabbar || !ind || !window.tPhysics) return;
   const P = window.tPhysics;
+  try { (window.__navLog = window.__navLog || []).push(Math.round(performance.now()) + ' init tbLeft=' + tabbar.getBoundingClientRect().left.toFixed(1) + ' tbW=' + tabbar.getBoundingClientRect().width.toFixed(1) + ' indL=' + ind.style.left + ' indW=' + ind.style.width); } catch (_) {}
+  function dbg(m) { try { (window.__navLog = window.__navLog || []).push(Math.round(performance.now()) + ' ' + m); } catch (_) {} }
 
   let visNames = [], visRects = [];
   let tbLeft = 0, baseLeft = 0;   /* baseLeft: 拖拽/飞行期间指示器 left 冻结为此值, 位移全走 transform */
@@ -199,6 +205,7 @@ window.addEventListener('load', () => {
         if (settled || flTries > 240) { endFlight(); return; }
       } else { stopLoop(); return; }
     } catch (e) {
+      dbg('CATCH ' + e.message);
       /* 任何意外都收尾复位, 绝不把滑块留在放大/半路状态 (曾因异常卡住且无法自愈) */
       try { if (window.cloudLog) cloudLog('滑块动画异常已复位: ' + e.message, 'warning'); } catch (_) {}
       mode = 'idle';
@@ -231,6 +238,7 @@ window.addEventListener('load', () => {
        真正停下的档位不一致, 于是落定后又被 switchTab 拽回原档 (表现为滑块突然从原位再移一次) */
     const landIdx = nearestIdx(tbLeft + sim.pos + sim.wid / 2);
     const landTab = visNames[landIdx];
+    dbg('endFlight pos=' + sim.pos.toFixed(1) + ' landTab=' + landTab + ' cur=' + TAB_NAMES[_curTab]);
     if (landTab && landTab !== TAB_NAMES[_curTab]) switchTab(landTab);
   }
 
@@ -244,6 +252,7 @@ window.addEventListener('load', () => {
   }
 
   function gestureStart(tx, ty, ts) {
+    dbg('gstart mode=' + mode + ' tf=' + (ind.style.transform || 'none'));
     startX = tx; startY = ty;
     _suppressClick = false;   /* 新手势开始: 上一手势的收尾 click 已不可能再到达 */
     _indTouched = true;       /* 指示器从此归手势逻辑管, load 初始定位不再插手 */
@@ -253,6 +262,7 @@ window.addEventListener('load', () => {
     prevT = lastT = ts || 0; prevX = lastX = tx;
     const ir = ind.getBoundingClientRect();
     const onSlider = tx >= ir.left && tx <= ir.right && ty >= ir.top && ty <= ir.bottom;
+    dbg('gstart onSlider=' + onSlider);
     /* 按住滑块 或 飞行中任意位置按住: 截停当前运动, 转入抓取 */
     if (onSlider || mode === 'flight') {
       stopLoop(); mode = 'idle';
@@ -302,6 +312,7 @@ window.addEventListener('load', () => {
   }
 
   function onEnd() {
+    dbg('onEnd mode=' + mode);
     dragging = false; intentDecided = false; _tabbarDragging = false;
     /* 飞行中收到的 end (另一根手指/另一次点击) 不能把飞行打断在半路 —— 一打断就会停在
        放大态且无人接管的半途位置; 让它照常落定 */
@@ -320,6 +331,7 @@ window.addEventListener('load', () => {
            拖拽/飞行期间位移在 transform 里, 直接清 transform 会瞬移回抓取前的 left */
         const curL = visualLeft();
         const curW = parseFloat(ind.style.width) || (sim ? sim.wid : 0);
+        dbg('settle landTab=' + landTab + ' cur=' + TAB_NAMES[_curTab] + ' curL=' + curL.toFixed(1) + ' simPos=' + (sim ? sim.pos.toFixed(1) : 'null'));
         ind.style.transition = 'none';
         ind.style.left = curL + 'px';
         ind.style.width = curW + 'px';
@@ -375,6 +387,7 @@ window.addEventListener('load', () => {
     return performance.now() - _lastTouchAt < 1000;
   }
   tabbar.addEventListener('mousedown', e => {
+    dbg('mousedown guard=' + fromTouch(e) + ' btn=' + e.button);
     if (e.button !== 0 || fromTouch(e)) return;
     _mouseDown = true;
     gestureStart(e.clientX, e.clientY, e.timeStamp);
@@ -393,6 +406,7 @@ window.addEventListener('load', () => {
   tabbar.addEventListener('click', e => {
     const t = e.target.closest('.tab');
     if (!t) return;
+    dbg('click suppress=' + _suppressClick + ' mode=' + mode);
     if (_suppressClick) { _suppressClick = false; return; }
     /* 拖动/飞行的收尾 click 与飞行中的点击都直接忽略:
        飞行的落定由 endFlight 负责, 这里一旦"复位到当前档"就会把滑块
@@ -495,7 +509,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '110g-20261001';
+  window._webuiBuild = '110f-20261001';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */

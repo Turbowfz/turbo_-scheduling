@@ -2,7 +2,6 @@
 const TAB_NAMES = ['status','config','cloud','about'];
 let _curTab = 0;
 let _tabbarDragging = false;   /* 拖拽期间阻止 switchTab 覆盖指示器位置 */
-let _indTouched = false;       /* 指示器已被用户操作接管: load 回写初始位置/恢复过渡必须让路 */
 
 /* ── 震动: 已按需求关闭 (原先 navigator.vibrate 失效时会落 root 兜底,
    而 ksu 通道串行 —— 拖动跨档连震会让滑块卡顿)。保留入口与调用点, 需要时改回即可 ── */
@@ -34,7 +33,6 @@ window.switchTab = function(name) {
   const idx = TAB_NAMES.indexOf(name);
   if (idx < 0) return;
   _curTab = idx;
-  _indTouched = true;
   restoreIndicatorTransition();
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -53,17 +51,12 @@ window.switchTab = function(name) {
 };
 
 window.addEventListener('load', () => {
-  /* 初始定位只在"用户从未碰过指示器"时执行。页面 load 会因背景图/资源慢而晚于第一次操作,
-     那时再回写会把滑块从拖动/飞行/已切换的档位拽回"状态页"; 它顺手恢复的样式表过渡还会让
-     落定时的 left 写入变成动画 (先闪回抓取前的位置, 再滑向目标) —— 真机闪回的元凶。
-     另外: 拖拽/飞行期间的内联 transition:none 是"落定原子性"的前提, 谁都不能提前清掉 */
-  if (_indTouched) return;
   const firstTab = document.getElementById('tab-status');
   const ind = document.getElementById('tab-indicator');
   if (firstTab && ind) {
     ind.style.transition = 'none';
     moveIndicator(firstTab);
-    requestAnimationFrame(() => { if (!_indTouched) ind.style.transition = ''; });
+    requestAnimationFrame(() => { ind.style.transition = ''; });
   }
 });
 
@@ -146,14 +139,6 @@ window.addEventListener('load', () => {
     ind.classList.toggle('noblur', lv >= 2);
   }
 
-  /* 当前视觉左缘 (tabbar 坐标) = 内联 left + transform 的 translateX 位移。
-     拖拽/飞行期间 inline left 冻结在抓取时的值, 真实位置在 transform 里 ——
-     只读 left 会把滑块当成还在抓取前的位置 (闪回根源), 所有"从当前位置接着走"的地方都用它 */
-  function visualLeft() {
-    const mtx = /translateX\(([-0-9.]+)px\)/.exec(ind.style.transform || '');
-    return (parseFloat(ind.style.left) || 0) + (mtx ? parseFloat(mtx[1]) : 0);
-  }
-
   function render() {
     /* left 在拖拽/飞行期间冻结为 baseLeft (抓取时写一次), 每帧只更新 transform 与 width */
     ind.style.transform = 'translateX(' + (sim.pos - baseLeft) + 'px) scale(1.28)';
@@ -220,12 +205,8 @@ window.addEventListener('load', () => {
     ind.style.left = sim.pos + 'px';
     ind.style.width = sim.wid + 'px';
     ind.style.transform = '';      /* 清掉内联 transform, 让 CSS 的 grabbed 缩放规则重新生效 */
-    ind.classList.remove('grabbed');
-    /* 必须先强制一次重排再恢复过渡: 浏览器不会在两个 JS 写之间重算样式, 若在同一任务里就把
-       transition 恢复成样式表规则, 上面这次 left 变化会被当成"过渡"从抓取时的旧值慢慢滑过来,
-       而 transform 清空是瞬时的 —— 视觉上就是先闪回拖动前的位置、再滑向目标 (真机闪回元凶) */
-    void ind.offsetWidth;
     ind.style.transition = '';
+    ind.classList.remove('grabbed');
     stopLoop();
     /* 落定判定必须按"实际停下的位置"取档 —— 早先按速度做衰减预估, 预测值常与弹簧
        真正停下的档位不一致, 于是落定后又被 switchTab 拽回原档 (表现为滑块突然从原位再移一次) */
@@ -245,8 +226,6 @@ window.addEventListener('load', () => {
 
   function gestureStart(tx, ty, ts) {
     startX = tx; startY = ty;
-    _suppressClick = false;   /* 新手势开始: 上一手势的收尾 click 已不可能再到达 */
-    _indTouched = true;       /* 指示器从此归手势逻辑管, load 初始定位不再插手 */
     cacheRects();
     lastBest = Math.max(0, visNames.indexOf(TAB_NAMES[_curTab]));
     dragging = false; intentDecided = false;
@@ -256,11 +235,10 @@ window.addEventListener('load', () => {
     /* 按住滑块 或 飞行中任意位置按住: 截停当前运动, 转入抓取 */
     if (onSlider || mode === 'flight') {
       stopLoop(); mode = 'idle';
-      /* 抓取态不能用 getBoundingClientRect 当布局值 (含 scale(1.28) 缩放), 也不能只读
-         inline left (飞行中它停在抓取前的值, 位移在 transform 里) —— 必须用视觉位置初始化,
-         否则抓取瞬间位置会跳变 (曾把滑块瞬移回拖动前的位置) */
+      /* 抓取态的 rect 含 scale(1.28) 缩放, 不能当布局值用 —— 用内联样式(未缩放)初始化,
+         否则抓取瞬间位置/宽度会被缩放值污染而跳一下 */
       const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
-      const curL = visualLeft();
+      const curL = parseFloat(ind.style.left);
       const curW = parseFloat(ind.style.width);
       baseLeft = isFinite(curL) ? curL : (actEl ? actEl.offsetLeft : 0);
       const baseW = (isFinite(curW) && curW > 0) ? curW : (actEl ? actEl.offsetWidth : ir.width);
@@ -303,36 +281,14 @@ window.addEventListener('load', () => {
 
   function onEnd() {
     dragging = false; intentDecided = false; _tabbarDragging = false;
-    /* 飞行中收到的 end (另一根手指/另一次点击) 不能把飞行打断在半路 —— 一打断就会停在
-       放大态且无人接管的半途位置; 让它照常落定 */
-    if (mode === 'flight') return;
     if (mode !== 'drag') {
-      /* 只按了一下没拖动 (轻点滑块): 就近落档, 不要回写"当前档" —— 飞行中截停时滑块停在
-         半路, 回写当前档 = 突然闪回拖动前的位置 (用户反馈"被重置回原处"的元凶之一) */
+      /* 只按了一下没拖动: 摘掉抓取态并把位置/宽度交回当前档, 否则会一直保持放大 */
       if (mode === 'idle' && ind.classList.contains('grabbed')) {
-        _suppressClick = true;   /* 轻点滑块不是"点标签", 收尾 click 不再触发页面切换 */
-        let landTab = null;
-        if (sim && visRects.length) {
-          const li = nearestIdx(tbLeft + sim.pos + sim.wid / 2);
-          landTab = visNames[li] || null;
-        }
-        /* 收尾同样走 FLIP 顺序: 先把"当前视觉位置"固化成 left/width 再清 transform ——
-           拖拽/飞行期间位移在 transform 里, 直接清 transform 会瞬移回抓取前的 left */
-        const curL = visualLeft();
-        const curW = parseFloat(ind.style.width) || (sim ? sim.wid : 0);
-        ind.style.transition = 'none';
-        ind.style.left = curL + 'px';
-        ind.style.width = curW + 'px';
+        const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
+        ind.style.transition = '';
         ind.style.transform = '';
         ind.classList.remove('grabbed');
-        void ind.offsetWidth;    /* 强制重排: 上述固化在"无过渡"下立即生效 */
-        ind.style.transition = '';   /* 恢复样式表过渡 (left/width 弹性曲线) */
-        if (landTab && landTab !== TAB_NAMES[_curTab]) {
-          switchTab(landTab);    /* 就近落档: 目标位置由 switchTab 写, 滑块弹滑过去 */
-        } else {
-          const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
-          if (actEl) { ind.style.left = actEl.offsetLeft + 'px'; ind.style.width = actEl.offsetWidth + 'px'; }
-        }
+        if (actEl) { ind.style.left = actEl.offsetLeft + 'px'; ind.style.width = actEl.offsetWidth + 'px'; }
       }
       mode = 'idle';
       return;
@@ -343,39 +299,24 @@ window.addEventListener('load', () => {
     if (lastT && prevT && lastT - prevT > 0 && lastT - prevT < 120) {
       v = (lastX - prevX) / (lastT - prevT) * 1000;
     }
-    /* 本手势的收尾 click 一律忽略 (鼠标拖拽必发一次 click; 触摸的兼容 click 可能迟到,
-       晚于飞行落定)。标记不设定时器 —— 留到下一次手势开始才清 (见 gestureStart):
-       click 到达的时刻在"飞行中/刚落定"之间浮动, 定时器永远猜不准 */
-    _suppressClick = true;
+    _suppressClick = true; setTimeout(() => { _suppressClick = false; }, 400);
     beginFlight(v);
     startLoop(performance.now());
   }
 
   /* ── 事件绑定: 触摸 (真机) 与鼠标 (桌面预览/调试) 共用同一套手势逻辑 ── */
-  let _lastTouchAt = 0;   /* 最近一次触摸事件时刻: 识别触摸兼容鼠标事件用 */
   tabbar.addEventListener('touchstart', e => {
-    _lastTouchAt = performance.now();
     if (e.target.closest('.tab')) tapVibrate();
     const t0 = e.touches[0]; gestureStart(t0.clientX, t0.clientY, e.timeStamp);
   }, { passive: true });
   tabbar.addEventListener('touchmove', e => {
-    _lastTouchAt = performance.now();
     const t0 = e.touches[0]; gestureMove(t0.clientX, t0.clientY, e.timeStamp);
   }, { passive: true });
-  tabbar.addEventListener('touchend',    () => { _lastTouchAt = performance.now(); onEnd(); });
-  tabbar.addEventListener('touchcancel', () => { _lastTouchAt = performance.now(); onEnd(); });
-
-  /* 触摸设备上, 每个触摸序列结束后浏览器还会补发一整套"兼容鼠标事件" (mousedown/mouseup/click),
-     坐标就是手指位置。其中的 mousedown 会被当成桌面鼠标按下 → 截停正在飞行的滑块、把位置
-     重置回抓取前 (用户反馈"甩出去后被重置回原处、变大消失"的直接原因)。
-     真机触摸时鼠标路径不该参与 —— 用浏览器标记 + 最近有触摸事件在场 双重识别并忽略 */
+  tabbar.addEventListener('touchend',    onEnd);
+  tabbar.addEventListener('touchcancel', onEnd);
   let _mouseDown = false;
-  function fromTouch(e) {
-    if (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) return true;
-    return performance.now() - _lastTouchAt < 1000;
-  }
   tabbar.addEventListener('mousedown', e => {
-    if (e.button !== 0 || fromTouch(e)) return;
+    if (e.button !== 0) return;
     _mouseDown = true;
     gestureStart(e.clientX, e.clientY, e.timeStamp);
   });
@@ -389,15 +330,18 @@ window.addEventListener('load', () => {
     onEnd();
   });
 
-  /* 点击其他标签: FLIP 两段式 —— 先无过渡固化当前视觉位, 再挂过渡滑向目标 */
+  /* 点击其他标签: FLIP 两段式 —— 先无过渡落到当前视觉位, 再挂弹性过渡滑向目标 */
   tabbar.addEventListener('click', e => {
     const t = e.target.closest('.tab');
     if (!t) return;
     if (_suppressClick) { _suppressClick = false; return; }
-    /* 拖动/飞行的收尾 click 与飞行中的点击都直接忽略:
-       飞行的落定由 endFlight 负责, 这里一旦"复位到当前档"就会把滑块
-       从半路拽回拖动前的位置 (曾把 400ms 的抑制窗当成整个飞行过程, 而飞行要 700~900ms) */
-    if (mode !== 'idle') return;
+    /* 上一次动画若异常停在中间态, 点击时先收尾复位 —— 保证一次点击就能自愈 */
+    if (mode !== 'idle') {
+      mode = 'idle'; stopLoop();
+      ind.style.transform = ''; ind.classList.remove('grabbed'); ind.style.transition = '';
+      const curEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
+      if (curEl) { ind.style.left = curEl.offsetLeft + 'px'; ind.style.width = curEl.offsetWidth + 'px'; }
+    }
     const name = t.id.replace('tab-', '');
     if (name === TAB_NAMES[_curTab]) return;
     const el = document.getElementById('tab-' + name);
@@ -405,7 +349,8 @@ window.addEventListener('load', () => {
     /* FLIP 顺序必须是: ①无过渡把"当前视觉位置"固化成 left/width (清掉 transform 位移)
        ②强制一次重排让 transition:none 生效 ③挂上过渡 ④由 switchTab 写入目标位置驱动动画。
        反过来先写目标位置再挂过渡 → 位置已是终点, 过渡无事可做 = 瞬移 (曾犯此错) */
-    const curL = visualLeft();
+    const mtx = /translateX\(([-0-9.]+)px\)/.exec(ind.style.transform || '');
+    const curL = (parseFloat(ind.style.left) || 0) + (mtx ? parseFloat(mtx[1]) : 0);
     const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
     const curW = parseFloat(ind.style.width) || (actEl ? actEl.offsetWidth : 0);
     ind.style.transition = 'none';
@@ -495,7 +440,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '110g-20261001';
+  window._webuiBuild = '110e-20261001';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */
