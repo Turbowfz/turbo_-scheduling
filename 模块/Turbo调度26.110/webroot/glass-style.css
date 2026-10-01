@@ -46,7 +46,7 @@ body{
   pointer-events:none;
   will-change:transform;
   transform:translateZ(0);
-  transition:opacity .5s;
+  transition:opacity .5s cubic-bezier(.4,0,.2,1);
 }
 
 
@@ -64,10 +64,10 @@ body{
 .ttl{font-size:clamp(22px,6.15vw,28px);font-weight:700;color:var(--ac);letter-spacing:-.3px}
 .sub{font-size:var(--fs-xs);color:var(--tx3);letter-spacing:.8px;text-transform:uppercase;margin-top:1px}
 .hr{position:absolute;right:0;top:0;display:flex;align-items:center;gap:8px}
-#dot{width:8px;height:8px;border-radius:50%;background:var(--tx3);transition:background .3s,box-shadow .3s;flex-shrink:0}
+#dot{width:8px;height:8px;border-radius:50%;background:var(--tx3);transition:background .3s cubic-bezier(.4,0,.2,1),box-shadow .3s cubic-bezier(.4,0,.2,1);flex-shrink:0}
 #dot.ok{background:var(--ok);box-shadow:0 0 8px rgba(22,163,74,.45);box-shadow:0 0 8px color-mix(in srgb,var(--ok) 60%,transparent)}
 #dot.er{background:var(--er)}
-#dot.sp{background:var(--wa);animation:blink 1.2s ease-in-out infinite}
+#dot.sp{background:var(--wa);animation:blink 1.2s cubic-bezier(.4,0,.2,1) infinite}
 @keyframes blink{0%,100%{opacity:.35}50%{opacity:1}}
 
 .card{
@@ -86,7 +86,7 @@ body{
     inset 0 1px 0 rgba(255,255,255,.55),
     0 4px 16px rgba(0,0,0,.07),
     0 1px 4px rgba(0,0,0,.05);
-  transition:box-shadow .08s linear;
+  transition:box-shadow .08s cubic-bezier(.4,0,.2,1);
   isolation:isolate;
 }
 
@@ -189,7 +189,7 @@ body{
   border-radius:999px;
   border:1px solid rgba(255,255,255,.35);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.3),inset 0 -1px 0 rgba(0,0,0,.05);
-  transition:background .24s,border-color .24s,box-shadow .24s;
+  transition:background .24s cubic-bezier(.4,0,.2,1),border-color .24s cubic-bezier(.4,0,.2,1),box-shadow .24s cubic-bezier(.4,0,.2,1);
 }
 .tk::after{
   content:'';position:absolute;
@@ -229,6 +229,7 @@ body{
   contain:layout style;
 }
 .tabbar{
+  touch-action:pan-y;   /* 横向手势归滑块拖拽, 纵向滚动交还浏览器 */
   opacity:0;
   pointer-events:auto;
   display:flex;align-items:stretch;
@@ -264,9 +265,9 @@ body{
     inset 0 1px 0 rgba(255,255,255,.28),
     0 1px 6px rgba(0,0,0,.06);
   border:1px solid rgba(255,255,255,.18);
-  transition:left .38s cubic-bezier(.34,1.48,.64,1),
-             width .38s cubic-bezier(.34,1.48,.64,1),
-             box-shadow .3s;
+  transition:left .38s cubic-bezier(.3,1.6,.5,1),
+             width .38s cubic-bezier(.3,1.6,.5,1),
+             box-shadow .3s cubic-bezier(.4,0,.2,1);
   /* transform 不进过渡列表: 按下/松手瞬时切换缩放, 拖动中恒定 ——
      缩放动画与位置跟手叠加是"变短→闪→变长"伪影的根源 */
   will-change:left,width,transform,box-shadow;
@@ -275,6 +276,9 @@ body{
   transform:translateZ(0) scale(1);
 }
 /* 按住/拖动滑块: 放大为瞬时切换 (无过渡), 拖动全程恒定不闪跳 */
+/* 自适应降级 L2: 去掉滑块模糊 (拖动中每帧重算模糊是最大开销) */
+.tab-indicator.noblur{backdrop-filter:none !important;-webkit-backdrop-filter:none !important;background:rgba(255,255,255,.22)}
+[data-theme="dark"] .tab-indicator.noblur{background:rgba(255,255,255,.26)}
 .tab-indicator.grabbed{
   transform:translateZ(0) scale(1.28);
   box-shadow:
@@ -343,7 +347,7 @@ body{
   bottom:-14%;right:-11%;
   width:73%;height:73%;
   opacity:.9;color:var(--tx3);
-  transition:opacity .35s,color .35s;
+  transition:opacity .35s cubic-bezier(.4,0,.2,1),color .35s cubic-bezier(.4,0,.2,1);
   pointer-events:none;
   left:auto;top:auto;
 }
@@ -386,7 +390,7 @@ body{
   background:rgba(255,255,255,.28);border:1px solid rgba(255,255,255,.50);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.55);
   font-size:var(--fs-xs);font-weight:700;color:var(--tx3);letter-spacing:.2px;
-  pointer-events:none;transition:opacity .15s;
+  pointer-events:none;transition:opacity .15s cubic-bezier(.4,0,.2,1);
 }
 .info-switch-pill-icon{font-size:10px;opacity:.65;transition:transform .32s cubic-bezier(.34,1.56,.64,1)}
 @keyframes panel-out{
@@ -400,7 +404,7 @@ body{
   86% {transform:translateY(2px)  scale(.997)}
   100%{opacity:1;transform:translateY(0)   scale(1)}
 }
-.info-panel-out{animation:panel-out .13s ease-in both;pointer-events:none}
+.info-panel-out{animation:panel-out .13s cubic-bezier(.4,0,.2,1) both;pointer-events:none}
 .info-panel-in{animation:panel-in .42s cubic-bezier(.34,1.56,.64,1) both}
 
 /* ── 弹窗动画 ── */
@@ -418,17 +422,17 @@ body{
 }
 #donate-overlay.in{
   display:flex !important;
-  animation:overlay-in .22s ease both;
+  animation:overlay-in .22s cubic-bezier(.4,0,.2,1) both;
 }
 #donate-overlay.in #donate-card{
   animation:modal-in .38s cubic-bezier(.34,1.42,.64,1) both;
 }
 #donate-overlay.out{
-  animation:overlay-out .2s ease both;
+  animation:overlay-out .2s cubic-bezier(.4,0,.2,1) both;
   pointer-events:none;
 }
 #donate-overlay.out #donate-card{
-  animation:modal-out .18s ease both;
+  animation:modal-out .18s cubic-bezier(.4,0,.2,1) both;
 }
 
 /* ── Turbo 附加组件 ── */
@@ -442,7 +446,7 @@ body{
 .package-list::-webkit-scrollbar{width:4px}.package-list::-webkit-scrollbar-track{background:transparent}.package-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.3);border-radius:4px}
 .list-item{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.5);border-radius:var(--r-sm);margin-bottom:6px;box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 2px 8px rgba(0,0,0,.06)}
 .pkg-name{font-size:var(--fs-sm);font-family:'SF Mono',Menlo,monospace;word-break:break-all;padding-right:12px;flex:1;color:var(--tx);font-weight:600}
-.delete-btn{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.30);cursor:pointer;transition:transform .15s;flex-shrink:0}
+.delete-btn{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.30);cursor:pointer;transition:transform .15s cubic-bezier(.4,0,.2,1);flex-shrink:0}
 .delete-btn:active{transform:scale(.85)}
 .delete-btn svg{stroke:#dc2626;width:16px;height:16px}
 .empty-tip{padding:32px 20px;text-align:center;color:var(--tx3);font-size:var(--fs-sm);display:flex;flex-direction:column;align-items:center;gap:12px;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.5);border-radius:var(--r-sm);box-shadow:inset 0 1px 0 rgba(255,255,255,.55)}
@@ -450,7 +454,7 @@ body{
 .log-area{background:rgba(20,20,22,.55);backdrop-filter:blur(var(--blur)) saturate(160%);-webkit-backdrop-filter:blur(var(--blur)) saturate(160%);border:1px solid rgba(255,255,255,.25);border-radius:var(--r-sm);padding:12px;color:#64FFDA;font-family:'SF Mono',Menlo,monospace;font-size:12px;line-height:1.7;max-height:200px;overflow-y:auto;margin-top:8px;box-shadow:inset 0 1px 0 rgba(255,255,255,.15)}
 .log-area::-webkit-scrollbar{width:4px}.log-area::-webkit-scrollbar-track{background:transparent}.log-area::-webkit-scrollbar-thumb{background:rgba(100,255,218,.2);border-radius:4px}
 .log-header{display:flex;justify-content:space-between;align-items:center}
-.clear-btn{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.45);color:var(--tx2);padding:6px 13px;border-radius:8px;cursor:pointer;transition:transform .15s;font-size:var(--fs-xs);font-weight:700}
+.clear-btn{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.45);color:var(--tx2);padding:6px 13px;border-radius:8px;cursor:pointer;transition:transform .15s cubic-bezier(.4,0,.2,1);font-size:var(--fs-xs);font-weight:700}
 .clear-btn:active{transform:scale(.9)}
 .log-item{margin:6px 0;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.12)}
 .log-item:last-child{border-bottom:none}
@@ -510,7 +514,7 @@ body{
 .cf-gp{margin:8px 0;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:rgba(255,255,255,.06);overflow:hidden}
 .cf-gp summary{list-style:none;cursor:pointer;padding:10px 12px;font-size:var(--fs-xs);font-weight:700;color:var(--ac);user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
 .cf-gp summary::-webkit-details-marker{display:none}
-.cf-gp summary::after{content:'▸';float:right;transition:transform .25s;opacity:.6}
+.cf-gp summary::after{content:'▸';float:right;transition:transform .25s cubic-bezier(.4,0,.2,1);opacity:.6}
 .cf-gp[open] summary::after{transform:rotate(90deg)}
 .cf-gp-body{padding:2px 12px 10px}
 [data-theme="dark"] .cf-gp{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.04)}

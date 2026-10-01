@@ -68,19 +68,26 @@ window.addEventListener('load', () => {
   }
 });
 
-/* ── Tabbar 拖拽 (指示器实时跟手, 越过中线立即切页, 松手 snap) ── */
+/* ── Tabbar 拖拽/甩动 (物理版): 拖拽阻尼跟手, 松手入弹簧滑行,
+   甩出距离由力度决定 (无档位上限), 冲出栏边缘进入缓冲区减速并被弹回,
+   落定后切换到落点 tab。物理常量与积分在 physics.js (tests/spring_test.js 同源验证) ── */
 (function initTabbarDrag() {
   const tabbar = document.getElementById('tabbar');
   const ind    = document.getElementById('tab-indicator');
-  if (!tabbar || !ind) return;
+  if (!tabbar || !ind || !window.tPhysics) return;
+  const P = window.tPhysics;
 
-  let startX = 0, startY = 0, startTab = 0;
-  let dragging = false, intentDecided = false;
-  /* 仅缓存可见 tab: 隐藏页签 (display:none) 的 rect 是全零,
-     混进插值会让宽度朝 0 收缩 + 位置瞬移 (变短→闪现的根源) */
   let visNames = [], visRects = [];
+  let tbLeft = 0, baseLeft = 0;   /* baseLeft: 拖拽/飞行期间指示器 left 冻结为此值, 位移全走 transform */
+  let startX = 0, startY = 0;
+  let dragging = false, intentDecided = false;
   let lastBest = 0;
-  let tbLeft = 0;   /* tabbar 每次拖动只测一次, touchmove 不再强制重排 */
+  let mode = 'idle';              /* idle | drag | flight */
+  let sim = null;                 /* {pos, wid, vel, target, targetW, min, max, over} */
+  let raf = 0, lastFrame = 0, flTries = 0;
+  let frameAvg = 16, degrade = 0; /* 自适应降级: 0 正常, 1 冻结宽度, 2 去模糊, 3 弹簧刚度加倍提前交 CSS */
+  let prevT = 0, prevX = 0, lastT = 0, lastX = 0;   /* 速度采样: 倒数两次 move */
+  let pendingTab = '';
 
   function cacheRects() {
     visNames = []; visRects = [];
@@ -94,8 +101,15 @@ window.addEventListener('load', () => {
       visRects.push(r);
     }
   }
-
-  /* 根据手指 X 计算指示器连续位置 (插值只在可见 tab 之间) */
+  function nearestIdx(x) {
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < visRects.length; i++) {
+      const d = Math.abs(x - (visRects[i].left + visRects[i].width / 2));
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+  /* 根据手指 X 计算指示器连续位置 (插值只在可见 tab 之间, left/width 相对 tabbar) */
   function indPosForX(x) {
     const n = visRects.length;
     if (!n) return null;
@@ -125,99 +139,158 @@ window.addEventListener('load', () => {
     const at = Math.abs(t);
     const left  = targetRect ? cur.left  + (targetRect.left  - cur.left)  * at : cur.left;
     const width = targetRect ? cur.width + (targetRect.width - cur.width) * at : cur.width;
-    const tbRectLeft = tbLeft;
-    return { left: left - tbRectLeft, width, best };
+    return { left: left - tbLeft, width, best };
+  }
+  function setDegrade(lv) {
+    if (lv === degrade) return;
+    degrade = lv;
+    ind.classList.toggle('noblur', lv >= 2);
+  }
+
+  function render() {
+    ind.style.left = baseLeft + 'px';
+    ind.style.transform = 'translateX(' + (sim.pos - baseLeft) + 'px) scale(1.28)';
+    if (degrade < 1) ind.style.width = sim.wid + 'px';
+  }
+  function startLoop(now) { if (!raf) { lastFrame = now || 0; raf = requestAnimationFrame(loop); } }
+  function stopLoop() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
+
+  function loop(now) {
+    const dtMs = lastFrame ? now - lastFrame : 16;
+    lastFrame = now;
+    let dt = dtMs / 1000; if (dt > 0.05) dt = 0.05; if (dt <= 0) dt = 0.016;
+    /* 自适应降级: 帧间隔均值 >24ms 逐级降, <17ms 回升 */
+    frameAvg = frameAvg * 0.9 + dtMs * 0.1;
+    if (frameAvg > 24 && degrade < 3) setDegrade(degrade + 1);
+    else if (frameAvg < 17 && degrade > 0) setDegrade(degrade - 1);
+
+    if (mode === 'drag') {
+      sim.pos = P.chase(sim.pos, sim.target);
+      sim.wid = P.chase(sim.wid, sim.targetW);
+      render();
+    } else if (mode === 'flight') {
+      /* 飞行目标随推进更新 = 最近的 tab; 甩动力度决定飞多远, 边缘缓冲负责拦住 */
+      const idx = nearestIdx(tbLeft + sim.pos + sim.wid / 2);
+      sim.target  = visRects[idx].left  - tbLeft;
+      sim.targetW = visRects[idx].width;
+      const k = degrade >= 3 ? P.FLIGHT_K * 4 : P.FLIGHT_K;
+      const c = degrade >= 3 ? P.FLIGHT_C * 2 : P.FLIGHT_C;
+      P.step(sim, dt, k, c);
+      render();
+      flTries++;
+      const settled = Math.abs(sim.vel) < P.SETTLE_V && Math.abs(sim.pos - sim.target) < P.SETTLE_X;
+      if (settled || flTries > 240) {
+        mode = 'idle'; stopLoop();
+        sim.pos = sim.target; sim.wid = sim.targetW;
+        ind.style.left = sim.pos + 'px';
+        ind.style.width = sim.wid + 'px';
+        ind.style.transform = 'translateX(0) scale(1)';
+        ind.style.transition = '';
+        if (pendingTab) { const t = pendingTab; pendingTab = ''; switchTab(t); }
+      }
+    } else { stopLoop(); return; }
+    if (!raf) raf = requestAnimationFrame(loop);
+  }
+
+  /* 甩动力度 → 目标档 (用于提前切页): 沿速度做衰减扫描, 落点决定 tab */
+  function beginFlight(vpx) {
+    mode = 'flight'; flTries = 0;
+    sim.vel = vpx;                       /* px/s, 甩动力度直接进弹簧 */
+    sim.over = 14;                       /* 边缘缓冲区: 最远冲出 14px */
+    sim.min = visRects[0].left - tbLeft;
+    sim.max = visRects[visRects.length - 1].right - tbLeft - sim.wid;
+    let stop = sim.pos, v = vpx;
+    for (let i = 0; i < 40 && Math.abs(v) > P.SETTLE_V; i++) { v *= 0.9; stop += v * 0.016; }
+    const cx = Math.max(visRects[0].left + sim.wid / 2,
+               Math.min(visRects[visRects.length - 1].right - sim.wid / 2, stop + sim.wid / 2));
+    pendingTab = visNames[nearestIdx(cx)] || TAB_NAMES[_curTab];
   }
 
   tabbar.addEventListener('touchstart', e => {
-    /* 手指按下 tab 立即震 (零延迟感知), click 不再重复震 */
     if (e.target.closest('.tab')) tapVibrate();
-    startX    = e.touches[0].clientX;
-    startY    = e.touches[0].clientY;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
     cacheRects();
-    startTab  = visNames.indexOf(TAB_NAMES[_curTab]);
-    if (startTab < 0) startTab = 0;
-    lastBest  = startTab;
-    dragging  = false;
-    intentDecided = false;
-    /* 只有按在滑块上: 立即放大 (无过渡, 按下即到位) */
+    lastBest = Math.max(0, visNames.indexOf(TAB_NAMES[_curTab]));
+    dragging = false; intentDecided = false;
+    prevT = lastT = 0; prevX = lastX = 0;
     const ir = ind.getBoundingClientRect();
     const tx = e.touches[0].clientX, ty = e.touches[0].clientY;
-    if (tx >= ir.left && tx <= ir.right && ty >= ir.top && ty <= ir.bottom) {
+    const onSlider = tx >= ir.left && tx <= ir.right && ty >= ir.top && ty <= ir.bottom;
+    /* 按住滑块 或 飞行中任意位置按住: 截停当前运动, 转入抓取 */
+    if (onSlider || mode === 'flight') {
+      stopLoop(); mode = 'idle'; pendingTab = '';
+      baseLeft = ir.left - tbLeft;
+      sim = { pos: baseLeft, wid: ir.width, vel: 0, target: baseLeft, targetW: ir.width,
+              min: visRects[0].left - tbLeft,
+              max: visRects[visRects.length - 1].right - tbLeft - ir.width, over: 14 };
       ind.style.transition = 'none';
       ind.classList.add('grabbed');
+      render();
     }
   }, { passive: true });
 
   tabbar.addEventListener('touchmove', e => {
     const dx = e.touches[0].clientX - startX;
     const dy = e.touches[0].clientY - startY;
-
     if (!intentDecided) {
       if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
       intentDecided = true;
       if (Math.abs(dy) > Math.abs(dx) * 1.2) return;   /* 纵向, 放弃 */
-      dragging = true;
-      _tabbarDragging = true;
+      dragging = true; _tabbarDragging = true; mode = 'drag';
+      sim.min = visRects[0].left - tbLeft;
+      sim.max = visRects[visRects.length - 1].right - tbLeft - sim.wid;
+      sim.over = 0;
       ind.style.transition = 'none';
-      ind.classList.add('grabbed');   /* 拖动放大: 瞬时到位, 拖动中恒定 */
+      ind.classList.add('grabbed');
       haptic(10);
     }
     if (!dragging) return;
 
+    prevT = lastT; prevX = lastX;
+    lastT = e.timeStamp; lastX = e.touches[0].clientX;
+
     const pos = indPosForX(e.touches[0].clientX);
     if (!pos) return;
-
-    /* 指示器直接跟手, 无 transition; 拖动中不切页, 松手时再切 */
-    if (ind.style.transition !== 'none') ind.style.transition = 'none';
-    ind.style.left  = pos.left  + 'px';
-    ind.style.width = pos.width + 'px';
-
-    if (pos.best !== lastBest) {
-      lastBest = pos.best;
-      haptic(6);
-    }
+    sim.target = pos.left; sim.targetW = pos.width;
+    if (pos.best !== lastBest) { lastBest = pos.best; haptic(6); }
+    startLoop(e.timeStamp);
   }, { passive: true });
 
   function onEnd() {
-    /* 先挂过渡 (位置snap + 缩放果冻回弹), 再撤 grabbed → 松手同时回弹 */
-    ind.style.transition = 'left .38s cubic-bezier(.34,1.48,.64,1), width .38s cubic-bezier(.34,1.48,.64,1), transform .3s cubic-bezier(.34,1.56,.64,1)';
-    ind.classList.remove('grabbed');
-    if (!dragging) { dragging = false; intentDecided = false; return; }
-    dragging = false;
-    intentDecided = false;
-
-    _tabbarDragging = false;
-
-    /* 松手时一次性切换到手指最后所在的标签 */
-    if (lastBest !== startTab && visNames[lastBest]) {
-      switchTab(visNames[lastBest]);
+    dragging = false; intentDecided = false; _tabbarDragging = false;
+    if (mode !== 'drag') { mode = 'idle'; return; }
+    /* 甩动速度: 最近两次 move (px/ms → px/s); 时间窗 120ms 外视为静止 */
+    let v = 0;
+    if (lastT && prevT && lastT - prevT > 0 && lastT - prevT < 120) {
+      v = (lastX - prevX) / (lastT - prevT) * 1000;
     }
-
-    const activeEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
-    if (activeEl) {
-      ind.style.left  = activeEl.offsetLeft  + 'px';
-      ind.style.width = activeEl.offsetWidth + 'px';
-    }
-    /* 收尾: 清掉内联过渡, 回归样式表的回弹曲线 */
-    setTimeout(() => { if (!_tabbarDragging) { ind.style.transition = ''; } }, 400);
+    const tabs = P.flickTabs(Math.abs(v));
+    let ti = lastBest + (v > 0 ? 1 : -1) * tabs;
+    ti = Math.max(0, Math.min(visNames.length - 1, ti));
+    pendingTab = visNames[ti] || TAB_NAMES[_curTab];
+    beginFlight(v * 1000);
+    startLoop(performance.now());
   }
 
   tabbar.addEventListener('touchend',    onEnd);
   tabbar.addEventListener('touchcancel', onEnd);
 
-  /* 点击其他标签: 缩放果冻放大 → 弹性滑过去 → 缩回 (震动已由 touchstart 触发) */
+  /* 点击其他标签: FLIP 两段式 —— 先无过渡落到当前视觉位, 再挂弹性过渡滑向目标 */
   tabbar.addEventListener('click', e => {
     const t = e.target.closest('.tab');
-    if (!t) return;
+    if (!t || mode !== 'idle') return;
     const name = t.id.replace('tab-', '');
     if (name === TAB_NAMES[_curTab]) return;
-    /* 恢复样式表过渡 (清掉拖拽遗留的 transition:none), transform 果济曲线由内联提供 */
-    ind.style.transition = 'left .38s cubic-bezier(.34,1.48,.64,1), width .38s cubic-bezier(.34,1.48,.64,1), transform .3s cubic-bezier(.34,1.56,.64,1)';
+    const el = document.getElementById('tab-' + name);
+    if (!el) return;
+    ind.style.transition = 'none';
     ind.classList.add('grabbed');
+    ind.style.left = el.offsetLeft + 'px';
+    ind.style.width = el.offsetWidth + 'px';
+    void ind.offsetWidth;
+    ind.style.transition = 'left .38s cubic-bezier(.3,1.6,.5,1), width .38s cubic-bezier(.3,1.6,.5,1), transform .3s cubic-bezier(.3,1.65,.45,1)';
     switchTab(name);
-    /* 等弹性滑动结束再缩回 */
-    setTimeout(() => { ind.classList.remove('grabbed'); }, 400);
+    setTimeout(() => { ind.classList.remove('grabbed'); ind.style.transition = ''; }, 420);
   });
 })();
 
