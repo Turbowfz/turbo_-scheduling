@@ -120,7 +120,7 @@ window.saveCloudToDB = async function() {
   await withBusy(document.getElementById('cloud-save-btn'), async () => {
     const tmp = `/data/local/tmp/turbo_w_${Date.now()}.json`; try {
       /* 写临时 JSON (b64 分块, 免疫转义) → cosa write → 删临时 */
-      await writeFileChecked(tmp, JSON.stringify(obj, null, 2)); const r = await cosa('write', pkg, tmp); await execStdout(`rm -f '${tmp}' 2>/dev/null`); if (r.timeout) { cloudLog('注入超时 (可能仍在后台执行, 稍后用"从DB读取"确认)', 'error'); return; }
+      await writeFileChecked(tmp, JSON.stringify(obj, null, 2)); const r = await cosa('write', pkg, tmp); await execStdout(`rm -f '${tmp}' 2>/dev/null`); if (r.timeout) { cloudLog('注入超时 (可能仍在后台执行, 稍后用"📖 读数据库"确认)', 'error'); return; }
       if (!r.ok) { cloudLog('注入失败: ' + (r.out || r.err || ('退出码 ' + r.ec)), 'error'); return; }
       /* cosa 输出逐行进日志 (含"已忽略未知字段"提示) */
       for (const line of r.out.split('\n').map(s => s.trim()).filter(Boolean)) {
@@ -160,18 +160,20 @@ window.deleteCloudFile = async function() {
   _delArmed = ''; if (btn) btn.textContent = '🗑 删除cccf配置'; try {
     await execStdout(`rm -f '${CCCF}/${name}'`); cloudLog('已删除 cccf: ' + name, 'success'); loadCloudFiles(); } catch (e) { cloudLog('删除失败: ' + e.message, 'error'); }
 }; /* ═══════════ 云控注入 (cccf → 数据库) ═══════════ */
-/* 后台注入: 设备端把匹配+注入落盘到 log/inject_web.log 并立即返回, 页面轮询日志追加到操作日志,
-   期间界面不阻塞 (旧实现 await 最长 150s, 整个页面卡死等它跑完) */
+/* 后台注入: 设备端把匹配+注入放进子 shell 落盘到 log/inject_web.log 并立即返回,
+   页面轮询日志追加到操作日志, 期间界面不阻塞 (旧实现 await 最长 150s, 整个页面卡死等它跑完)。
+   注意: 尾部 & 只后台化紧邻的命令 —— 必须把整串放进 ( ... ) 子 shell 再 &, 否则 execFull 会等满全程 */
 let _injectRunning = false;
 window.runCloudInject = async function() {
   const btn = document.getElementById('cloud-inject-btn');
   if (_injectRunning) { cloudLog('注入正在后台执行, 进度见下方日志', 'warning'); return; }
+  if (!(await execAlive())) { cloudLog('无法执行 root 命令 (ksu.exec 不可用或超时), 请确认已授权', 'error'); return; }
   _injectRunning = true;
   if (btn) { btn.disabled = true; btn.textContent = '后台注入中...'; }
   cloudLog('匹配已安装游戏 + 后台注入中 (实时进度见下方)...', 'info');
   const LF = `${MODDIR}/log/inject_web.log`;
-  /* 设备端后台执行: 尾部 & 让命令立即返回, 日志落盘供轮询 */
-  await execFull(`rm -f ${LF}; sh ${MODDIR}/scripts/pkg_matcher.sh >> ${LF} 2>&1; sh ${MODDIR}/scripts/cloud_ctrl.sh inject >> ${LF} 2>&1; echo "=== 注入结束 ===" >> ${LF} &`, 5000);
+  const r0 = await execFull(`rm -f ${LF}; mkdir -p ${MODDIR}/log; ( sh ${MODDIR}/scripts/pkg_matcher.sh >> ${LF} 2>&1; sh ${MODDIR}/scripts/cloud_ctrl.sh inject >> ${LF} 2>&1; echo "=== 注入结束 ===" >> ${LF} ) &`, 5000);
+  if (r0.timeout) { cloudLog('后台启动异常 (命令未立即返回), 轮询已取消, 请稍后用"📖 读数据库"确认', 'error'); _injectRunning = false; if (btn) { btn.disabled = false; btn.textContent = '⚡ 注入云控配置'; } return; }
   let seen = 0, tries = 0;
   const poll = setInterval(async () => {
     tries++;
@@ -187,7 +189,7 @@ window.runCloudInject = async function() {
     const done = lines.some(l => l.includes('=== 注入结束 ==='));
     if (done || tries > 150) {
       clearInterval(poll);
-      if (!done) cloudLog('后台执行超过 150 秒未见结束标记, 轮询停止 (可稍后用"从DB读取"确认)', 'warning');
+      if (!done) cloudLog('后台执行超过约 4 分钟未见结束标记, 轮询停止 (可稍后用"📖 读数据库"确认)', 'warning');
       else cloudLog('云控注入流程结束', 'success');
       _injectRunning = false;
       if (btn) { btn.disabled = false; btn.textContent = '⚡ 注入云控配置'; }
@@ -229,14 +231,14 @@ window.fetchCloudConfig = async function() {
       /* 没选游戏: 先刷新一次列表再提示 —— ①清除数据 后下拉是空的, 用户进游戏等下发回来必须能重新选到 */
       if (!pkg) {
         cloudLog('未选择游戏, 先刷新数据库列表...', 'info'); await loadDbPackages(); pkg = ((sel && sel.value) || '').trim();
-        if (!pkg) { cloudLog('数据库里还没有任何游戏行: 请先「① 清除数据」→ 进一次游戏等云端下发 (可能几分钟) → 再点本按钮', 'warning'); return; }
+        if (!pkg) { cloudLog('数据库里还没有任何游戏行: 请先「🧹 清除服务数据」→ 进一次游戏等云端下发 (可能几分钟) → 再点本按钮', 'warning'); return; }
       }
       if (!safeName(pkg)) { cloudLog('包名异常: ' + pkg, 'error'); return; }
       /* 只认官方下发那行: 库里同时有我们注入的本地行时也不会读错 */
       const r = await cosa('read-cloud', pkg); if (r.timeout) { cloudLog('读取超时', 'error'); return; }
       if (!r.ok) {
         cloudLog('该游戏还没有官方下发的配置行: ' + (r.out || r.err || ''), 'warning');
-        cloudLog('做法: 点「① 清除数据」→ 进一次游戏等云端下发 (可能几分钟) → 回来选该游戏再点本按钮', 'info');
+        cloudLog('做法: 点「🧹 清除服务数据」→ 进一次游戏等云端下发 (可能几分钟) → 回来选该游戏再点本按钮', 'info');
         await loadDbPackages(); return; }
       let row; try { row = JSON.parse(r.out); } catch (e) { cloudLog('返回不是合法 JSON: ' + e.message, 'error'); return; }
       if (Array.isArray(row)) row = row[0]; if (!row) { cloudLog('数据库中还没有该游戏的行: ' + pkg, 'warning'); return; }
