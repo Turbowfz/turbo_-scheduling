@@ -1,9 +1,10 @@
-/* 滑块"闪回原处"复现脚本 (页面内执行体)。
+/* 滑块复现脚本 (页面内执行体)。
    模拟真机触摸序列 + WebView 在触摸结束后补发的"兼容鼠标事件"(mousedown/mouseup/click),
-   每 25ms 采样滑块位置, 用过程数据判定是否闪回。
+   每 25ms 采样滑块位置/缩放, 用过程数据判定。
    关键: 位置一律换算成"相对 tabbar"的坐标 —— 页面内容变化会让整页横向漂移,
    绝对坐标(视口坐标)会失真, 相对坐标不受影响。
-   参数从 window.__reproParams 读: { mode:'drag'|'tap', steps, durMs, burstDelay, tabFrom, tabTo }  */
+   参数 window.__reproParams: { mode:'drag'|'tap'|'intercept'|'scaleanim',
+                              steps, durMs, burstDelay, tabFrom, tabTo, hitDelay }  */
 const P = window.__reproParams || {};
 window.__navLog = [];
 const NAMES = ['status', 'config', 'cloud', 'about'];
@@ -16,9 +17,9 @@ NAMES.forEach(n => byName[n] = document.getElementById('tab-' + n));
 window.requestAnimationFrame = cb => setTimeout(() => cb(performance.now()), 16);
 window.cancelAnimationFrame = id => clearTimeout(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const scaleOf = () => +(parseFloat(getComputedStyle(ind).scale) || 1).toFixed(3);
 
 const tbLeft0 = tb.getBoundingClientRect().left;
-const relCenter = el => { const r = el.getBoundingClientRect(); return (r.left + r.width / 2) - tbLeft0; };
 function tabRel() {   /* 各可见档位相对 tabbar 的中心 (隐藏档 width<1 跳过) */
   const out = {};
   for (const n of NAMES) { const r = byName[n].getBoundingClientRect(); if (r.width < 1) continue; out[n] = (r.left + r.width / 2) - tbLeft0; }
@@ -27,19 +28,16 @@ function tabRel() {   /* 各可见档位相对 tabbar 的中心 (隐藏档 width
 const rel0 = tabRel();
 const baseC = rel0[P.tabFrom || 'status'], targetC = rel0[P.tabTo || 'cloud'];
 
-/* ── 采样 ── */
+/* ── 采样: 位置 (相对 tabbar 的中心) + 缩放 (计算值, 反映过渡中间态) ── */
 const S = [];
 const t0 = performance.now();
 const timer = setInterval(() => {
   const r = ind.getBoundingClientRect();
   const at = document.querySelector('.tab.active');
-  const mt = /translateX\(([-0-9.]+)px\)/.exec(ind.style.transform || '');
   S.push({ t: Math.round(performance.now() - t0),
            c: +((r.left + r.width / 2) - tb.getBoundingClientRect().left).toFixed(1),
            g: ind.classList.contains('grabbed') ? 1 : 0, tab: at ? at.id.replace('tab-', '') : '',
-           il: ind.style.left, iw: ind.style.width,
-           tx: mt ? +parseFloat(mt[1]).toFixed(1) : (ind.style.transform ? 'none' : ''),
-           it: (ind.style.transition || '').slice(0, 22) });
+           il: ind.style.left, iw: ind.style.width, tr: ind.style.translate || '', sc: scaleOf() });
 }, 25);
 
 function touchEv(type, x, y) {
@@ -61,6 +59,17 @@ function compatBurst(x, y) {
   mouseEv('click',    x, y, target);
   return target.id || target.tagName;
 }
+/* 手动推进动画时钟取样: 测试窗格被遮挡时浏览器不给渲染帧, CSS 过渡时钟停在 0,
+   实时采样会得到"点了一下没动/没弹"的假失败; 手动 step 后读到的就是真实过程 */
+function stepAnim(from, to, stepMs, pick) {
+  const out = [];
+  const anims = ind.getAnimations();
+  for (let ct = from; ct <= to; ct += stepMs) {
+    anims.forEach(a => { try { a.currentTime = ct; } catch (_) {} });
+    out.push(ct + ':' + pick());
+  }
+  return out;
+}
 
 const tbr = tb.getBoundingClientRect();
 const from = byName[P.tabFrom || 'status'], to = byName[P.tabTo || 'cloud'];
@@ -71,13 +80,14 @@ const geom = () => {
   const tbR = tb.getBoundingClientRect();
   return { tb: [+tbR.left.toFixed(1), +tbR.top.toFixed(1), +tbR.width.toFixed(1)],
     win: [window.innerWidth, window.innerHeight, Math.round(document.documentElement.scrollWidth)],
-    tabs: tabRel(), ind: { l: ind.style.left, w: ind.style.width, tf: ind.style.transform,
+    tabs: tabRel(), ind: { l: ind.style.left, w: ind.style.width, tr: ind.style.translate, sc: scaleOf(),
       relL: +(ind.getBoundingClientRect().left - tbR.left).toFixed(1) } };
 };
 const geomStart = geom();
 const burstDelay = (P.burstDelay === undefined) ? 20 : P.burstDelay;
+const relStep = () => ((ind.getBoundingClientRect().left + ind.getBoundingClientRect().width / 2) - tb.getBoundingClientRect().left).toFixed(1);
 let burstTarget = '(none)';
-const tapSteps = [];
+const tapSteps = [], pressSteps = [], relSteps = [];
 
 if (P.mode === 'tap') {
   touchEv('touchstart', x1, y);
@@ -86,16 +96,17 @@ if (P.mode === 'tap') {
   await sleep(30);
   burstTarget = compatBurst(x1, y);
   await sleep(400);
-  /* 轻点走的是 CSS 过渡 (不是 JS 弹簧): 当测试窗格被遮挡时浏览器不给渲染帧, 动画时钟停在 0,
-     实时采样只会看到"点击后滑块不动"的假失败 —— 手动推进时间轴再读几何, 拿到的就是真实过程 */
-  try {
-    const anims = ind.getAnimations();
-    for (let ct = 0; ct <= 480; ct += 40) {
-      anims.forEach(a => { try { a.currentTime = ct; } catch (_) {} });
-      tapSteps.push(ct + ':' + ((ind.getBoundingClientRect().left + ind.getBoundingClientRect().width / 2) - tb.getBoundingClientRect().left).toFixed(1));
-    }
-  } catch (_) {}
+  try { tapSteps.push(...stepAnim(0, 480, 40, relStep)); } catch (_) {}
   await sleep(700);
+} else if (P.mode === 'scaleanim') {
+  /* 缩放过程: ①按住滑块 → 放大 (应过冲 >1.28 再回落) ②原地松手 → 缩小 (应欠冲 <1 再回弹) */
+  touchEv('touchstart', x0, y);
+  await sleep(60);
+  try { pressSteps.push(...stepAnim(0, 400, 40, scaleOf)); } catch (_) {}
+  touchEv('touchend', x0, y);
+  await sleep(150);
+  try { relSteps.push(...stepAnim(0, 400, 40, scaleOf)); } catch (_) {}
+  await sleep(600);
 } else if (P.mode === 'intercept') {
   /* 甩动 → 飞行途中按住滑块截停 → 原地松手 (就近落档) */
   touchEv('touchstart', x0, y);
@@ -110,6 +121,7 @@ if (P.mode === 'tap') {
   touchEv('touchend', cx, cy);
   await sleep(1500);
 } else {
+  /* 拖动 → 松手飞行 → 落定 (期间穿插兼容鼠标事件) */
   touchEv('touchstart', x0, y);
   await sleep(30);
   const steps = P.steps || 8, dur = P.durMs || 400;
@@ -146,20 +158,31 @@ const finalFrac = +((last.c - baseC) / span).toFixed(2);
 /* 布局稳定性: 起止两次测得的各档中心必须一致 (页面漂移会让所有判定失真) */
 const stable = NAMES.every(n => (rel0[n] === undefined) === (relEnd[n] === undefined)
   && (rel0[n] === undefined || Math.abs(rel0[n] - relEnd[n]) < 2));
+const dragOk = stable && uniq >= 5 && peak > 0.5 && flash === 0 && landed === under && grabbedSamples > 0 && !ind.classList.contains('grabbed');
 const tapVals = tapSteps.map(s => +s.split(':')[1]);
 const tapUniq = new Set(tapVals).size;
 const tapFinal = tapVals.length ? tapVals[tapVals.length - 1] : null;
-const dragOk = stable && uniq >= 5 && peak > 0.5 && flash === 0 && landed === under && grabbedSamples > 0 && !ind.classList.contains('grabbed');
 const tapOk = stable && tapUniq >= 5 && tapFinal !== null && Math.abs(tapFinal - targetC) < 4
   && landed === (P.tabTo || 'cloud') && !ind.classList.contains('grabbed');
+/* 缩放: 放大要过冲 (>1.28) 后回到 1.28; 缩小要欠冲 (<1) 后回到 1; 各自要有 ≥5 个中间值 */
+const pressVals = pressSteps.map(s => +s.split(':')[1]);
+const relVals = relSteps.map(s => +s.split(':')[1]);
+const pressUniq = new Set(pressVals).size, relUniq = new Set(relVals).size;
+const pressPeak = pressVals.length ? Math.max(...pressVals) : 0;
+const pressEnd = pressVals.length ? pressVals[pressVals.length - 1] : 0;
+const shrinkMin = relVals.length ? Math.min(...relVals) : 0;
+const shrinkEnd = relVals.length ? relVals[relVals.length - 1] : 0;
+const scaleOk = pressUniq >= 5 && pressPeak > 1.29 && Math.abs(pressEnd - 1.28) < 0.01
+  && relUniq >= 5 && shrinkMin < 0.99 && Math.abs(shrinkEnd - 1) < 0.01;
 
 return JSON.stringify({
-  ok: (P.mode === 'tap' ? tapOk : dragOk),
+  ok: (P.mode === 'tap' ? tapOk : (P.mode === 'scaleanim' ? scaleOk : dragOk)),
   stable, uniq, flash, flashAt, peak: +peak.toFixed(2), finalFrac,
   landed, under, grabbedSamples, grabbedAtEnd: ind.classList.contains('grabbed'),
   burstTarget, baseC: +baseC.toFixed(1), targetC: +targetC.toFixed(1), finalC: last.c,
   tapUniq, tapFinal, tapSteps,
+  pressUniq, relUniq, pressPeak, pressEnd, shrinkMin, shrinkEnd, pressSteps, relSteps,
   geomStart, geomEnd: geom(),
   log: window.__navLog || [],
-  samples: S.map(s => [s.t, s.c, s.g, s.tab, s.il, s.iw, s.tx, s.it])
+  samples: S.map(s => [s.t, s.c, s.g, s.tab, s.il, s.iw, s.tr, s.sc])
 });

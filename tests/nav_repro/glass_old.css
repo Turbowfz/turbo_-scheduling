@@ -267,23 +267,20 @@ body{
   border:1px solid rgba(255,255,255,.18);
   transition:left .38s cubic-bezier(.3,1.6,.5,1),
              width .38s cubic-bezier(.3,1.6,.5,1),
-             scale .34s cubic-bezier(.3,1.6,.5,1),
              box-shadow .3s cubic-bezier(.4,0,.2,1);
-  /* 位移(translate)不进过渡列表: 拖动/飞行期间每帧由 JS 写 translate, 给它挂过渡会和跟手叠加成
-     "变短→闪→变长"伪影。缩放改用独立属性 scale —— 它与 translate 的合成互不干扰,
-     因此放大/缩小能单独走非线性回弹 (按下 Q 弹放大、松手欠冲回弹), 不影响位置 */
-  will-change:left,width,translate,scale,box-shadow;
+  /* transform 不进过渡列表: 按下/松手瞬时切换缩放, 拖动中恒定 ——
+     缩放动画与位置跟手叠加是"变短→闪→变长"伪影的根源 */
+  will-change:left,width,transform,box-shadow;
   pointer-events:none;
   z-index:0;
-  transform:translateZ(0);
-  scale:1;
+  transform:translateZ(0) scale(1);
 }
-/* 按住/拖动滑块: 放大 (弹性回弹曲线见上面 scale 的过渡) */
+/* 按住/拖动滑块: 放大为瞬时切换 (无过渡), 拖动全程恒定不闪跳 */
 /* 自适应降级 L2: 去掉滑块模糊 (拖动中每帧重算模糊是最大开销) */
 .tab-indicator.noblur{backdrop-filter:none !important;-webkit-backdrop-filter:none !important;background:rgba(255,255,255,.22)}
 [data-theme="dark"] .tab-indicator.noblur{background:rgba(255,255,255,.26)}
 .tab-indicator.grabbed{
-  scale:1.28;
+  transform:translateZ(0) scale(1.28);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.45),
     0 4px 16px rgba(0,0,0,.16),

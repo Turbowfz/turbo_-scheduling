@@ -24,10 +24,15 @@ function moveIndicator(tabEl) {
   ind.style.left  = tabEl.offsetLeft + 'px';
   ind.style.width = tabEl.offsetWidth + 'px';
 }
-/* 恢复滑块样式表过渡 (清除拖拽遗留的内联 transition:none) */
+/* 只带 scale 的过渡串: 拖拽/飞行期间位置相关属性 (left/width/translate) 必须瞬时生效,
+   缩放单独走弹性回弹。曲线要与样式表 .tab-indicator 的 scale 过渡一致 (改一处要同步另一处) */
+const IND_SCALE_T = 'scale .34s cubic-bezier(.3,1.6,.5,1)';
+/* 恢复滑块样式表过渡 (清除拖拽遗留的内联过渡) */
 function restoreIndicatorTransition() {
   const ind = document.getElementById('tab-indicator');
-  if (ind && ind.style.transition === 'none') ind.style.transition = '';
+  if (!ind) return;
+  const t = ind.style.transition;
+  if (t === 'none' || t === IND_SCALE_T) ind.style.transition = '';
 }
 
 window.switchTab = function(name) {
@@ -77,7 +82,7 @@ window.addEventListener('load', () => {
   const P = window.tPhysics;
 
   let visNames = [], visRects = [];
-  let tbLeft = 0, baseLeft = 0;   /* baseLeft: 拖拽/飞行期间指示器 left 冻结为此值, 位移全走 transform */
+  let tbLeft = 0, baseLeft = 0;   /* baseLeft: 拖拽/飞行期间指示器 left 冻结为此值, 位移全走 translate (缩放走独立 scale) */
   let startX = 0, startY = 0;
   let dragging = false, intentDecided = false;
   let lastBest = 0;
@@ -146,17 +151,20 @@ window.addEventListener('load', () => {
     ind.classList.toggle('noblur', lv >= 2);
   }
 
-  /* 当前视觉左缘 (tabbar 坐标) = 内联 left + transform 的 translateX 位移。
-     拖拽/飞行期间 inline left 冻结在抓取时的值, 真实位置在 transform 里 ——
+  /* 当前视觉左缘 (tabbar 坐标) = 内联 left + translate 位移 (缩放由 .grabbed 的 scale 负责)。
+     拖拽/飞行期间 inline left 冻结在抓取时的值, 真实位置在 translate 里 ——
      只读 left 会把滑块当成还在抓取前的位置 (闪回根源), 所有"从当前位置接着走"的地方都用它 */
   function visualLeft() {
+    const tv = parseFloat(ind.style.translate);
+    if (isFinite(tv)) return (parseFloat(ind.style.left) || 0) + tv;
     const mtx = /translateX\(([-0-9.]+)px\)/.exec(ind.style.transform || '');
     return (parseFloat(ind.style.left) || 0) + (mtx ? parseFloat(mtx[1]) : 0);
   }
 
   function render() {
-    /* left 在拖拽/飞行期间冻结为 baseLeft (抓取时写一次), 每帧只更新 transform 与 width */
-    ind.style.transform = 'translateX(' + (sim.pos - baseLeft) + 'px) scale(1.28)';
+    /* left 在拖拽/飞行期间冻结为 baseLeft (抓取时写一次), 每帧只更新 translate 与 width。
+       缩放交给 .grabbed 的独立属性 scale —— 这里若写 transform 会打断 scale 的弹性过渡 */
+    ind.style.translate = (sim.pos - baseLeft) + 'px';
     if (degrade < 1) ind.style.width = sim.wid + 'px';
   }
   function startLoop(now) {
@@ -202,7 +210,7 @@ window.addEventListener('load', () => {
       /* 任何意外都收尾复位, 绝不把滑块留在放大/半路状态 (曾因异常卡住且无法自愈) */
       try { if (window.cloudLog) cloudLog('滑块动画异常已复位: ' + e.message, 'warning'); } catch (_) {}
       mode = 'idle';
-      ind.style.transform = '';
+      ind.style.translate = '';
       ind.classList.remove('grabbed');
       const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
       if (actEl) { ind.style.transition = ''; ind.style.left = actEl.offsetLeft + 'px'; ind.style.width = actEl.offsetWidth + 'px'; }
@@ -219,11 +227,12 @@ window.addEventListener('load', () => {
     sim.pos = sim.target; sim.wid = sim.targetW;
     ind.style.left = sim.pos + 'px';
     ind.style.width = sim.wid + 'px';
-    ind.style.transform = '';      /* 清掉内联 transform, 让 CSS 的 grabbed 缩放规则重新生效 */
+    ind.style.translate = '';      /* 清掉内联位移 (缩放由 .grabbed 类的 scale 独立负责) */
     ind.classList.remove('grabbed');
     /* 必须先强制一次重排再恢复过渡: 浏览器不会在两个 JS 写之间重算样式, 若在同一任务里就把
        transition 恢复成样式表规则, 上面这次 left 变化会被当成"过渡"从抓取时的旧值慢慢滑过来,
-       而 transform 清空是瞬时的 —— 视觉上就是先闪回拖动前的位置、再滑向目标 (真机闪回元凶) */
+       而 translate 清空是瞬时的 —— 视觉上就是先闪回拖动前的位置、再滑向目标 (真机闪回元凶)。
+       顺序上先摘 grabbed 再重排: 缩放过渡此刻就开始走 (只带 scale 的内联过渡), 回弹不受影响 */
     void ind.offsetWidth;
     ind.style.transition = '';
     stopLoop();
@@ -267,7 +276,7 @@ window.addEventListener('load', () => {
       sim = { pos: baseLeft, wid: baseW, vel: 0, target: baseLeft, targetW: baseW,
               min: visRects[0].left - tbLeft,
               max: visRects[visRects.length - 1].right - tbLeft - baseW, over: 14 };
-      ind.style.transition = 'none';
+      ind.style.transition = IND_SCALE_T;   /* 位置冻结要瞬时, 放大走独立 scale 过渡 */
       ind.style.left = baseLeft + 'px';
       ind.classList.add('grabbed');
       render();
@@ -285,7 +294,7 @@ window.addEventListener('load', () => {
       sim.min = visRects[0].left - tbLeft;
       sim.max = visRects[visRects.length - 1].right - tbLeft - sim.wid;
       sim.over = 0;
-      ind.style.transition = 'none';
+      ind.style.transition = IND_SCALE_T;   /* 拖拽中位置/宽度跟手要瞬时, 缩放保持弹性 */
       ind.classList.add('grabbed');
       haptic(10);
     }
@@ -316,14 +325,14 @@ window.addEventListener('load', () => {
           const li = nearestIdx(tbLeft + sim.pos + sim.wid / 2);
           landTab = visNames[li] || null;
         }
-        /* 收尾同样走 FLIP 顺序: 先把"当前视觉位置"固化成 left/width 再清 transform ——
-           拖拽/飞行期间位移在 transform 里, 直接清 transform 会瞬移回抓取前的 left */
+        /* 收尾同样走 FLIP 顺序: 先把"当前视觉位置"固化成 left/width 再清 translate ——
+           拖拽/飞行期间位移在 translate 里, 直接清它会瞬移回抓取前的 left */
         const curL = visualLeft();
         const curW = parseFloat(ind.style.width) || (sim ? sim.wid : 0);
-        ind.style.transition = 'none';
+        ind.style.transition = IND_SCALE_T;   /* 位置固化要瞬时, 缩小仍走弹性 scale */
         ind.style.left = curL + 'px';
         ind.style.width = curW + 'px';
-        ind.style.transform = '';
+        ind.style.translate = '';
         ind.classList.remove('grabbed');
         void ind.offsetWidth;    /* 强制重排: 上述固化在"无过渡"下立即生效 */
         ind.style.transition = '';   /* 恢复样式表过渡 (left/width 弹性曲线) */
@@ -402,19 +411,19 @@ window.addEventListener('load', () => {
     if (name === TAB_NAMES[_curTab]) return;
     const el = document.getElementById('tab-' + name);
     if (!el) return;
-    /* FLIP 顺序必须是: ①无过渡把"当前视觉位置"固化成 left/width (清掉 transform 位移)
-       ②强制一次重排让 transition:none 生效 ③挂上过渡 ④由 switchTab 写入目标位置驱动动画。
+    /* FLIP 顺序必须是: ①位置改动瞬时生效 (过渡只留 scale) ②强制一次重排固化视觉位
+       ③挂上过渡 ④由 switchTab 写入目标位置驱动动画。
        反过来先写目标位置再挂过渡 → 位置已是终点, 过渡无事可做 = 瞬移 (曾犯此错) */
     const curL = visualLeft();
     const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
     const curW = parseFloat(ind.style.width) || (actEl ? actEl.offsetWidth : 0);
-    ind.style.transition = 'none';
+    ind.style.transition = IND_SCALE_T;   /* 点击的放大/缩小也走弹性 scale, 位置改动仍瞬时 */
     ind.classList.add('grabbed');
-    ind.style.transform = '';
+    ind.style.translate = '';
     ind.style.left = curL + 'px';
     ind.style.width = curW + 'px';
-    void ind.offsetWidth;             /* 强制重排: 上述定位在"无过渡"下立即生效 */
-    ind.style.transition = 'left .42s cubic-bezier(.3,1.6,.5,1), width .42s cubic-bezier(.3,1.6,.5,1), transform .34s cubic-bezier(.3,1.65,.45,1)';
+    void ind.offsetWidth;             /* 强制重排: 上述定位立即生效 */
+    ind.style.transition = 'left .42s cubic-bezier(.3,1.6,.5,1), width .42s cubic-bezier(.3,1.6,.5,1), ' + IND_SCALE_T;
     window._tabbarAnimating = true;   /* 这段滑动期间不让状态刷新抢 ksu 通道 (会造成卡顿) */
     switchTab(name);                  /* 写入目标 left/width → 过渡驱动真正的滑动 */
     setTimeout(() => { ind.classList.remove('grabbed'); ind.style.transition = ''; window._tabbarAnimating = false; }, 470);
@@ -495,7 +504,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '110g-20261001';
+  window._webuiBuild = '110h-20261001';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */

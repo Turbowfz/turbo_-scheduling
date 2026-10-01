@@ -16,7 +16,7 @@ const DBG = "\n  function dbg(m) { try { (window.__navLog = window.__navLog || [
 
 ins('  const P = window.tPhysics;', DBG);
 ins('  function onEnd() {', "\n    dbg('onEnd mode=' + mode);");
-ins('  function gestureStart(tx, ty, ts) {', "\n    dbg('gstart mode=' + mode + ' tf=' + (ind.style.transform || 'none'));");
+ins('  function gestureStart(tx, ty, ts) {', "\n    dbg('gstart mode=' + mode + ' tr=' + (ind.style.translate || 'none') + ' sc=' + (parseFloat(getComputedStyle(ind).scale) || 1));");
 ins('    const onSlider = tx >= ir.left && tx <= ir.right && ty >= ir.top && ty <= ir.bottom;',
     "\n    dbg('gstart onSlider=' + onSlider);");
 ins('        const curW = parseFloat(ind.style.width) || (sim ? sim.wid : 0);',
