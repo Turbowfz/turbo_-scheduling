@@ -87,7 +87,7 @@ window.loadBaseConfigFromPaste = function() {
   });
 }; /* ═══════════ 文本版: 从本地 cccf 读取 ═══════════ */
 
-/* 下拉包名 → 本地 cccf 文件名 (从cccf读/删cccf/保存到cccf 共用) */
+/* 下拉包名 → 本地 cccf 文件名 (读本地cccf/删除cccf配置/保存到cccf 共用) */
 function dbPkgToFile() {
   const sel = document.getElementById('cf-db-pkg'); let pkg = ((sel && sel.value) || '').trim().replace(/\.json$/, '').replace(/\.enc$/, ''); if (!pkg) {
     try { const o = JSON.parse(document.getElementById('cloud-editor').value); pkg = String(o.package_name || ''); } catch (_) {}
@@ -156,32 +156,52 @@ window.deleteCloudFile = async function() {
   const btn = document.getElementById('cloud-del-btn'); const name = dbPkgToFile(); if (!name) { cloudLog('请先选择文件', 'warning'); return; }
   if (!safeName(name)) { cloudLog('文件名异常, 已拒绝删除: ' + name, 'error'); return; }
   if (_delArmed !== name) {
-    _delArmed = name; if (btn) btn.textContent = '确认删除?'; cloudLog('再点一次确认删除 cccf: ' + name, 'warning'); setTimeout(() => { if (btn && _delArmed === name) { _delArmed = ''; btn.textContent = '🗑 删cccf'; } }, 3500); return; }
-  _delArmed = ''; if (btn) btn.textContent = '🗑 删cccf'; try {
+    _delArmed = name; if (btn) btn.textContent = '确认删除?'; cloudLog('再点一次确认删除 cccf: ' + name, 'warning'); setTimeout(() => { if (btn && _delArmed === name) { _delArmed = ''; btn.textContent = '🗑 删除cccf配置'; } }, 3500); return; }
+  _delArmed = ''; if (btn) btn.textContent = '🗑 删除cccf配置'; try {
     await execStdout(`rm -f '${CCCF}/${name}'`); cloudLog('已删除 cccf: ' + name, 'success'); loadCloudFiles(); } catch (e) { cloudLog('删除失败: ' + e.message, 'error'); }
 }; /* ═══════════ 云控注入 (cccf → 数据库) ═══════════ */
+/* 后台注入: 设备端把匹配+注入落盘到 log/inject_web.log 并立即返回, 页面轮询日志追加到操作日志,
+   期间界面不阻塞 (旧实现 await 最长 150s, 整个页面卡死等它跑完) */
+let _injectRunning = false;
 window.runCloudInject = async function() {
-  const btn = document.getElementById('cloud-inject-btn'); if (btn) { btn.disabled = true; btn.textContent = '注入中...'; }
-  try {
-    cloudLog('匹配已安装游戏 + 注入中...', 'info'); /* pkg_matcher 先补渠道服映射 (shell 脚本), 再走 cloud_ctrl (json=cosa sync, enc=inject) */
-    const r1 = await execFull(`sh ${MODDIR}/scripts/pkg_matcher.sh 2>&1`, 60000); if (r1.timeout) cloudLog('包名匹配超时 (脚本可能仍在后台执行)', 'warning'); else for (const line of (r1.out || '').split('\n').filter(Boolean)) {
-      const t = line.trim(); if (!t) continue; cloudLog(t, (t.includes('错误') || t.startsWith('!')) ? 'error' : 'info'); }
-    const r2 = await execFull(`sh ${MODDIR}/scripts/cloud_ctrl.sh inject 2>&1`, 150000); if (r2.timeout) cloudLog('注入超时 (脚本可能仍在后台执行, 稍后确认)', 'warning'); else {
-      for (const line of (r2.out || '').split('\n').filter(Boolean)) {
-        const t = line.trim(); if (!t) continue; let type = 'info'; if (t.includes('OK:') || t.includes('注入完成') || t.startsWith('+')) type = 'success'; else if (t.includes('FAIL') || t.includes('错误') || t.startsWith('!')) type = 'error'; cloudLog(t, type); }
-      if (!r2.out) cloudLog('注入脚本无输出 (可能未执行成功), 请确认 root 授权', 'error'); else cloudLog('云控注入流程结束', 'success'); }
-    loadCloudFiles(); loadDbPackages(); } catch (e) {
-    cloudLog('注入异常: ' + e.message, 'error'); } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '⚡ 执行云控注入 (cccf → 数据库)'; }
-  }
+  const btn = document.getElementById('cloud-inject-btn');
+  if (_injectRunning) { cloudLog('注入正在后台执行, 进度见下方日志', 'warning'); return; }
+  _injectRunning = true;
+  if (btn) { btn.disabled = true; btn.textContent = '后台注入中...'; }
+  cloudLog('匹配已安装游戏 + 后台注入中 (实时进度见下方)...', 'info');
+  const LF = `${MODDIR}/log/inject_web.log`;
+  /* 设备端后台执行: 尾部 & 让命令立即返回, 日志落盘供轮询 */
+  await execFull(`rm -f ${LF}; sh ${MODDIR}/scripts/pkg_matcher.sh >> ${LF} 2>&1; sh ${MODDIR}/scripts/cloud_ctrl.sh inject >> ${LF} 2>&1; echo "=== 注入结束 ===" >> ${LF} &`, 5000);
+  let seen = 0, tries = 0;
+  const poll = setInterval(async () => {
+    tries++;
+    const raw = await execStdout(`cat ${LF} 2>/dev/null`, 8000);
+    const lines = (raw || '').split('\n');
+    for (; seen < lines.length; seen++) {
+      const t = lines[seen].trim(); if (!t) continue;
+      let type = 'info';
+      if (t.includes('OK:') || t.startsWith('+') || t.includes('成功') || t.includes('注入完成')) type = 'success';
+      else if (t.includes('FAIL') || t.includes('错误') || t.startsWith('!')) type = 'error';
+      cloudLog(t, type);
+    }
+    const done = lines.some(l => l.includes('=== 注入结束 ==='));
+    if (done || tries > 150) {
+      clearInterval(poll);
+      if (!done) cloudLog('后台执行超过 150 秒未见结束标记, 轮询停止 (可稍后用"从DB读取"确认)', 'warning');
+      else cloudLog('云控注入流程结束', 'success');
+      _injectRunning = false;
+      if (btn) { btn.disabled = false; btn.textContent = '⚡ 注入云控配置'; }
+      loadCloudFiles(); loadDbPackages();
+    }
+  }, 1500);
 }; /* ═══════════ 应用增强服务 (COSA) 维护 ═══════════ */
 
 /* 清除应用增强服务数据 (为拉取云端做准备): pm clear + 撤保护 (否则云端下发被触发器拦截) */
 let _cosaClrArmed = false;
 window.clearCosaData = async function() {
   const btn = document.getElementById('cosa-clear-btn'); if (!_cosaClrArmed) {
-    _cosaClrArmed = true; if (btn) btn.textContent = '确认清除?'; cloudLog('再点一次确认清除 (将重置数据库并撤掉注入保护)', 'warning'); setTimeout(() => { _cosaClrArmed = false; if (btn) btn.textContent = '① 清除数据'; }, 3500); return; }
-  _cosaClrArmed = false; if (btn) btn.textContent = '① 清除数据'; await withBusy(btn, async () => {
+    _cosaClrArmed = true; if (btn) btn.textContent = '确认清除?'; cloudLog('再点一次确认清除 (将重置数据库并撤掉注入保护)', 'warning'); setTimeout(() => { _cosaClrArmed = false; if (btn) btn.textContent = '① 清除服务数据'; }, 3500); return; }
+  _cosaClrArmed = false; if (btn) btn.textContent = '① 清除服务数据'; await withBusy(btn, async () => {
     const r = await execFull(`pm clear com.oplus.cosa`, 25000); if (r.timeout) { cloudLog('清除超时', 'error'); return; }
     if (!/Success/.test(r.out)) { cloudLog('清除失败: ' + (r.out || r.err || '无输出'), 'error'); return; }
     cloudLog('应用增强服务数据已清除', 'success'); const up = await cosa('unprotect'); if (up.ok) cloudLog('保护触发器已撤掉 — 云端下发不再被拦截', 'success'); else cloudLog('提示: 库已重置, 保护随旧库一并消失', 'info'); loadDbPackages(); cloudLog('接下来: 重新进游戏等云端下发 (可能几分钟) → 选游戏点"☁ 获取云端配置"', 'info'); });
