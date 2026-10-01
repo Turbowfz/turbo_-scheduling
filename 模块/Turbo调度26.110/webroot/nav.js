@@ -156,31 +156,43 @@ window.addEventListener('load', () => {
     /* 本帧回调已触发 → 先清掉 id: 否则末尾的续帧判断永远为假, 循环只跑一帧就死
        (表现为滑块跟手走一下就冻住、甩动停在原地、抓取态永不摘掉) */
     raf = 0;
-    const dtMs = lastFrame ? now - lastFrame : 16;
-    lastFrame = now;
-    let dt = dtMs / 1000; if (dt > 0.05) dt = 0.05; if (dt <= 0) dt = 0.016;
-    /* 自适应降级: 帧间隔均值 >24ms 逐级降, <17ms 回升 */
-    frameAvg = frameAvg * 0.9 + dtMs * 0.1;
-    if (frameAvg > 24 && degrade < 3) setDegrade(degrade + 1);
-    else if (frameAvg < 17 && degrade > 0) setDegrade(degrade - 1);
+    try {
+      const dtMs = lastFrame ? now - lastFrame : 16;
+      lastFrame = now;
+      let dt = dtMs / 1000; if (dt > 0.05) dt = 0.05; if (dt <= 0) dt = 0.016;
+      /* 自适应降级: 帧间隔均值 >24ms 逐级降, <17ms 回升 */
+      frameAvg = frameAvg * 0.9 + dtMs * 0.1;
+      if (frameAvg > 24 && degrade < 3) setDegrade(degrade + 1);
+      else if (frameAvg < 17 && degrade > 0) setDegrade(degrade - 1);
 
-    if (mode === 'drag') {
-      sim.pos = P.chase(sim.pos, sim.target);
-      sim.wid = P.chase(sim.wid, sim.targetW);
-      render();
-    } else if (mode === 'flight') {
-      /* 飞行目标随推进更新 = 最近的 tab; 甩动力度决定飞多远, 边缘缓冲负责拦住 */
-      const idx = nearestIdx(tbLeft + sim.pos + sim.wid / 2);
-      sim.target  = visRects[idx].left  - tbLeft;
-      sim.targetW = visRects[idx].width;
-      const k = degrade >= 3 ? P.FLIGHT_K * 4 : P.FLIGHT_K;
-      const c = degrade >= 3 ? P.FLIGHT_C * 2 : P.FLIGHT_C;
-      P.step(sim, dt, k, c);
-      render();
-      flTries++;
-      const settled = Math.abs(sim.vel) < P.SETTLE_V && Math.abs(sim.pos - sim.target) < P.SETTLE_X;
-      if (settled || flTries > 240) { endFlight(); return; }
-    } else { stopLoop(); return; }
+      if (mode === 'drag') {
+        sim.pos = P.chase(sim.pos, sim.target);
+        sim.wid = P.chase(sim.wid, sim.targetW);
+        render();
+      } else if (mode === 'flight') {
+        /* 飞行目标随推进更新 = 最近的 tab; 甩动力度决定飞多远, 边缘缓冲负责拦住 */
+        const idx = nearestIdx(tbLeft + sim.pos + sim.wid / 2);
+        sim.target  = visRects[idx].left  - tbLeft;
+        sim.targetW = visRects[idx].width;
+        const k = degrade >= 3 ? P.FLIGHT_K * 4 : P.FLIGHT_K;
+        const c = degrade >= 3 ? P.FLIGHT_C * 2 : P.FLIGHT_C;
+        P.step(sim, dt, k, c);
+        render();
+        flTries++;
+        const settled = Math.abs(sim.vel) < P.SETTLE_V && Math.abs(sim.pos - sim.target) < P.SETTLE_X;
+        if (settled || flTries > 240) { endFlight(); return; }
+      } else { stopLoop(); return; }
+    } catch (e) {
+      /* 任何意外都收尾复位, 绝不把滑块留在放大/半路状态 (曾因异常卡住且无法自愈) */
+      try { if (window.cloudLog) cloudLog('滑块动画异常已复位: ' + e.message, 'warning'); } catch (_) {}
+      mode = 'idle';
+      ind.style.transform = '';
+      ind.classList.remove('grabbed');
+      const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
+      if (actEl) { ind.style.transition = ''; ind.style.left = actEl.offsetLeft + 'px'; ind.style.width = actEl.offsetWidth + 'px'; }
+      stopLoop();
+      return;
+    }
 
     raf = requestAnimationFrame(loop);
   }
@@ -298,7 +310,14 @@ window.addEventListener('load', () => {
   /* 点击其他标签: FLIP 两段式 —— 先无过渡落到当前视觉位, 再挂弹性过渡滑向目标 */
   tabbar.addEventListener('click', e => {
     const t = e.target.closest('.tab');
-    if (!t || mode !== 'idle') return;
+    if (!t) return;
+    /* 上一次动画若异常停在中间态, 点击时先收尾复位 —— 保证一次点击就能自愈 */
+    if (mode !== 'idle') {
+      mode = 'idle'; stopLoop();
+      ind.style.transform = ''; ind.classList.remove('grabbed'); ind.style.transition = '';
+      const curEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
+      if (curEl) { ind.style.left = curEl.offsetLeft + 'px'; ind.style.width = curEl.offsetWidth + 'px'; }
+    }
     const name = t.id.replace('tab-', '');
     if (name === TAB_NAMES[_curTab]) return;
     const el = document.getElementById('tab-' + name);
@@ -388,6 +407,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       inp.focus();
     });
   });
+
+  /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
+  window._webuiBuild = '110b-20261001';
+  if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */
   await Promise.all([refreshStatus(), loadPackages()]);
