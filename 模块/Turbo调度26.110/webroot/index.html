@@ -153,11 +153,11 @@ setTimeout(function(){ var tb=document.getElementById('tabbar'); if(tb&&!tb.clas
     <button class="btn bpri" id="cloud-inject-btn" style="flex:1;padding:12px 14px;font-size:var(--fs-sm)">⚡ 注入云控配置</button>
   </div>
   <div class="row" style="margin-top:8px">
-    <button class="btn" id="cosa-clear-btn" style="flex:1;padding:9px 6px;font-size:var(--fs-xs)">① 清除服务数据</button>
+    <button class="btn" id="cosa-clear-btn" style="flex:1;padding:9px 6px;font-size:var(--fs-xs)">🧹 清除服务数据</button>
     <button class="btn" id="cosa-restart-btn" style="flex:1;padding:9px 6px;font-size:var(--fs-xs)">↻ 重启增强服务</button>
     <button class="btn" id="cosa-refresh-btn" style="flex:1;padding:9px 6px;font-size:var(--fs-xs)">🔄 刷新数据库配置</button>
   </div>
-  <div style="font-size:var(--fs-xs);color:var(--tx3);margin-top:6px;line-height:1.6;">· "⚡ 注入云控配置"= cccf 全部配置写入数据库 (开机也自动执行);"① 清除服务数据"= pm clear 重置数据库并撤保护 (获取云端第一步);"重启"= 杀 COSA 拉起四件套;"刷新"= cccf 重新注入</div>
+  <div style="font-size:var(--fs-xs);color:var(--tx3);margin-top:6px;line-height:1.6;">· "⚡ 注入云控配置"= cccf 全部配置写入数据库 (开机也自动执行);"🧹 清除服务数据"= pm clear 重置数据库并撤保护 (获取云端第一步);"重启"= 杀 COSA 拉起四件套;"刷新"= cccf 重新注入</div>
   <div class="log-header" style="margin-top:10px"><span class="ct">操作日志</span><button id="clear-cloud-log" class="clear-btn">清空</button></div>
   <div id="cloud-log" class="log-area"></div>
 </div>
@@ -214,7 +214,7 @@ setTimeout(function(){ var tb=document.getElementById('tabbar'); if(tb&&!tb.clas
       <button class="btn" id="cf-db-export-btn" style="flex:1;padding:9px 6px;font-size:var(--fs-xs)">📥 导出当前配置</button>
       <button class="btn" id="cloud-del-btn" style="flex:none;padding:9px 10px;font-size:var(--fs-xs)">🗑 删除cccf配置</button>
     </div>
-    <div style="font-size:var(--fs-xs);color:var(--tx3);margin-top:8px;line-height:1.6;">· "📖 读数据库"读数据库当前值 → 编辑 →"⚡注入数据库"写回 (包名取自下拉, 无行自动建档), 重启 COSA 生效<br>· "📖 读本地cccf"读本地模板 → "💾保存到cccf"写回<br>· "☁ 获取云端配置"只读官方下发的那一行 (下拉里标 ☁ 的游戏可直接读; 没有 ☁ 的才需要"① 清除服务数据"→ 进一次游戏等云端下发几分钟 → 切回页面列表会自动刷新 → 再读), 读到的配置编辑后点"⚡注入数据库"即成为本地配置 (from_server=0)<br>· "导出当前配置"把读取到的配置存为 .json 到 cccf (UI 版即可编辑)</div>
+    <div style="font-size:var(--fs-xs);color:var(--tx3);margin-top:8px;line-height:1.6;">· "📖 读数据库"读数据库当前值 → 编辑 →"⚡注入数据库"写回 (包名取自下拉, 无行自动建档), 重启 COSA 生效<br>· "📖 读本地cccf"读本地模板 → "💾保存到cccf"写回<br>· "☁ 获取云端配置"只读官方下发的那一行 (下拉里标 ☁ 的游戏可直接读; 没有 ☁ 的才需要"🧹 清除服务数据"→ 进一次游戏等云端下发几分钟 → 切回页面列表会自动刷新 → 再读), 读到的配置编辑后点"⚡注入数据库"即成为本地配置 (from_server=0)<br>· "导出当前配置"把读取到的配置存为 .json 到 cccf (UI 版即可编辑)</div>
   </div>
 </div>
 </div><!-- /page-cloud -->

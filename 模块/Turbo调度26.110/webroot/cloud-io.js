@@ -200,8 +200,8 @@ window.runCloudInject = async function() {
 let _cosaClrArmed = false;
 window.clearCosaData = async function() {
   const btn = document.getElementById('cosa-clear-btn'); if (!_cosaClrArmed) {
-    _cosaClrArmed = true; if (btn) btn.textContent = '确认清除?'; cloudLog('再点一次确认清除 (将重置数据库并撤掉注入保护)', 'warning'); setTimeout(() => { _cosaClrArmed = false; if (btn) btn.textContent = '① 清除服务数据'; }, 3500); return; }
-  _cosaClrArmed = false; if (btn) btn.textContent = '① 清除服务数据'; await withBusy(btn, async () => {
+    _cosaClrArmed = true; if (btn) btn.textContent = '确认清除?'; cloudLog('再点一次确认清除 (将重置数据库并撤掉注入保护)', 'warning'); setTimeout(() => { _cosaClrArmed = false; if (btn) btn.textContent = '🧹 清除服务数据'; }, 3500); return; }
+  _cosaClrArmed = false; if (btn) btn.textContent = '🧹 清除服务数据'; await withBusy(btn, async () => {
     const r = await execFull(`pm clear com.oplus.cosa`, 25000); if (r.timeout) { cloudLog('清除超时', 'error'); return; }
     if (!/Success/.test(r.out)) { cloudLog('清除失败: ' + (r.out || r.err || '无输出'), 'error'); return; }
     cloudLog('应用增强服务数据已清除', 'success'); const up = await cosa('unprotect'); if (up.ok) cloudLog('保护触发器已撤掉 — 云端下发不再被拦截', 'success'); else cloudLog('提示: 库已重置, 保护随旧库一并消失', 'info'); loadDbPackages(); cloudLog('接下来: 重新进游戏等云端下发 (可能几分钟) → 选游戏点"☁ 获取云端配置"', 'info'); });
