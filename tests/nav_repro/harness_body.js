@@ -12,6 +12,20 @@ const tb = document.getElementById('tabbar');
 const ind = document.getElementById('tab-indicator');
 const byName = {};
 NAMES.forEach(n => byName[n] = document.getElementById('tab-' + n));
+/* status-page.js 在状态未知时会隐藏「配置/云控」(本地无 ksu 环境即如此)。
+   多档位的用例 (改点跟随) 需要 4 个可见档, 用 showAllTabs 打开 —— 打开后必须重新摆一次滑块,
+   否则它还是按 2 档布局放置的 (宽 183), 与被测状态对不上 */
+if (P.showAllTabs) {
+  NAMES.forEach(n => { const e = byName[n]; if (e && e.style.display === 'none') e.style.display = ''; });
+  const first = byName[P.tabFrom || 'status'];
+  if (first) {
+    ind.style.transition = 'none';
+    ind.style.left = first.offsetLeft + 'px';
+    ind.style.width = first.offsetWidth + 'px';
+    void ind.offsetWidth;
+    ind.style.transition = '';
+  }
+}
 
 /* rAF 垫片: 后台标签页 rAF 不触发, 用真实时钟驱动的 setTimeout 代替 */
 window.requestAnimationFrame = cb => setTimeout(() => cb(performance.now()), 16);
@@ -107,6 +121,17 @@ if (P.mode === 'tap') {
   await sleep(150);
   try { relSteps.push(...stepAnim(0, 400, 40, scaleOf)); } catch (_) {}
   await sleep(600);
+} else if (P.mode === 'retarget') {
+  /* 点按切页 → 移动中改点另一档 (同向/反向由 tabTo2 与 tabTo 的位置关系决定):
+     期望 ①移动全程大小不变 ②反向时先按原方向冲过头再弹回 ③最终落到新点的档
+     ④到达后才缩小 */
+  const x2 = tbLeft0 + rel0[P.tabTo2 || 'status'];
+  touchEv('touchstart', x1, y); await sleep(30); touchEv('touchend', x1, y);
+  await sleep(30); burstTarget = compatBurst(x1, y);
+  await sleep(P.retargetDelay || 130);          /* 滑行进行中 */
+  touchEv('touchstart', x2, y); await sleep(30); touchEv('touchend', x2, y);
+  await sleep(30); compatBurst(x2, y);
+  await sleep(1800);
 } else if (P.mode === 'intercept') {
   /* 甩动 → 飞行途中按住滑块截停 → 原地松手 (就近落档) */
   touchEv('touchstart', x0, y);
@@ -162,8 +187,9 @@ const dragOk = stable && uniq >= 5 && peak > 0.5 && flash === 0 && landed === un
 const tapVals = tapSteps.map(s => +s.split(':')[1]);
 const tapUniq = new Set(tapVals).size;
 const tapFinal = tapVals.length ? tapVals[tapVals.length - 1] : null;
-const tapOk = stable && tapUniq >= 5 && tapFinal !== null && Math.abs(tapFinal - targetC) < 4
-  && landed === (P.tabTo || 'cloud') && !ind.classList.contains('grabbed');
+/* 点击滑行现在也是 JS 弹簧 (不是 CSS 过渡), 实时采样就能取到过程; 手动推时钟仅作补充证据 */
+const tapOk = stable && uniq >= 5 && Math.abs(last.c - targetC) < 5
+  && landed === (P.tabTo || 'cloud') && grabbedSamples > 0 && !ind.classList.contains('grabbed');
 /* 缩放: 放大要过冲 (>1.28) 后回到 1.28; 缩小要欠冲 (<1) 后回到 1; 各自要有 ≥5 个中间值 */
 const pressVals = pressSteps.map(s => +s.split(':')[1]);
 const relVals = relSteps.map(s => +s.split(':')[1]);
@@ -174,14 +200,30 @@ const shrinkMin = relVals.length ? Math.min(...relVals) : 0;
 const shrinkEnd = relVals.length ? relVals[relVals.length - 1] : 0;
 const scaleOk = pressUniq >= 5 && pressPeak > 1.29 && Math.abs(pressEnd - 1.28) < 0.01
   && relUniq >= 5 && shrinkMin < 0.99 && Math.abs(shrinkEnd - 1) < 0.01;
+/* 改点跟随: 移动中不允许缩小; 改点后允许"先冲过头"; 最终落到新点的档, 到达后才缩回 */
+const tab2 = P.tabTo2 || 'status';
+const c2rel = rel0[tab2];
+let ri = -1;
+for (let i = 0; i < S.length; i++) { if (S[i].tab === tab2) { ri = i; break; } }   /* 页面切到新档 ≈ 改点时刻 */
+const beforeR = ri > 0 ? S[ri - 1].c : null;
+const peakAfter = ri >= 0 ? Math.max(...S.slice(ri).map(s => s.c)) : null;
+const rebound = (beforeR !== null && peakAfter !== null) ? +(peakAfter - beforeR).toFixed(1) : null;
+const moving = S.filter((s, i) => i > 0 && Math.abs(s.c - S[i - 1].c) > 2);
+/* 大小是否在移动中变化: 看驱动的类 (grabbed) 而不是计算值 —— 窗格被遮挡时 CSS 过渡时钟不走,
+   计算值会停在起点造成假失败; 过渡曲线本身由 scaleanim 模式(手动推时钟)单独验证 */
+const shrinkWhileMoving = moving.filter(s => !s.g).length;
+const retargetOk = stable && ri >= 0 && shrinkWhileMoving === 0
+  && Math.abs(last.c - c2rel) < 5 && landed === tab2 && last.sc > 0.99
+  && (P.expectRebound ? (rebound !== null && rebound > 3) : true);
 
 return JSON.stringify({
-  ok: (P.mode === 'tap' ? tapOk : (P.mode === 'scaleanim' ? scaleOk : dragOk)),
+  ok: (P.mode === 'tap' ? tapOk : (P.mode === 'scaleanim' ? scaleOk : (P.mode === 'retarget' ? retargetOk : dragOk))),
   stable, uniq, flash, flashAt, peak: +peak.toFixed(2), finalFrac,
   landed, under, grabbedSamples, grabbedAtEnd: ind.classList.contains('grabbed'),
   burstTarget, baseC: +baseC.toFixed(1), targetC: +targetC.toFixed(1), finalC: last.c,
   tapUniq, tapFinal, tapSteps,
   pressUniq, relUniq, pressPeak, pressEnd, shrinkMin, shrinkEnd, pressSteps, relSteps,
+  retargetIdx: ri, rebound, shrinkWhileMoving, movingSamples: moving.length, c2rel: c2rel === undefined ? null : +c2rel.toFixed(1),
   geomStart, geomEnd: geom(),
   log: window.__navLog || [],
   samples: S.map(s => [s.t, s.c, s.g, s.tab, s.il, s.iw, s.tr, s.sc])

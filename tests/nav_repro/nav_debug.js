@@ -3,6 +3,7 @@ const TAB_NAMES = ['status','config','cloud','about'];
 let _curTab = 0;
 let _tabbarDragging = false;   /* 拖拽期间阻止 switchTab 覆盖指示器位置 */
 let _indTouched = false;       /* 指示器已被用户操作接管: load 回写初始位置/恢复过渡必须让路 */
+let _indFrozen = false;        /* 点击滑行期间由 JS 接管位置: switchTab 不许写位置/不许清内联过渡 */
 
 /* ── 震动: 已按需求关闭 (原先 navigator.vibrate 失效时会落 root 兜底,
    而 ksu 通道串行 —— 拖动跨档连震会让滑块卡顿)。保留入口与调用点, 需要时改回即可 ── */
@@ -19,7 +20,7 @@ function refreshWhenIdle(fn, delay) {
 }
 
 function moveIndicator(tabEl) {
-  if (_tabbarDragging) return;
+  if (_tabbarDragging || _indFrozen) return;
   const ind = document.getElementById('tab-indicator');
   if (!ind || !tabEl) return;
 
@@ -29,8 +30,10 @@ function moveIndicator(tabEl) {
 /* 只带 scale 的过渡串: 拖拽/飞行期间位置相关属性 (left/width/translate) 必须瞬时生效,
    缩放单独走弹性回弹。曲线要与样式表 .tab-indicator 的 scale 过渡一致 (改一处要同步另一处) */
 const IND_SCALE_T = 'scale .34s cubic-bezier(.3,1.6,.5,1)';
-/* 恢复滑块样式表过渡 (清除拖拽遗留的内联过渡) */
+/* 恢复滑块样式表过渡 (清除拖拽遗留的内联过渡)。
+   点击滑行期间不能清: 那个"只带 scale"的内联过渡是位置瞬时生效的前提 */
 function restoreIndicatorTransition() {
+  if (_indFrozen) return;
   const ind = document.getElementById('tab-indicator');
   if (!ind) return;
   const t = ind.style.transition;
@@ -98,10 +101,16 @@ window.addEventListener('load', () => {
   let frameAvg = 16, degrade = 0; /* 自适应降级: 0 正常, 1 冻结宽度, 2 去模糊, 3 弹簧刚度加倍提前交 CSS */
   let prevT = 0, prevX = 0, lastT = 0, lastX = 0;   /* 速度采样: 倒数两次 move */
   let _suppressClick = false;   /* 拖动/飞行刚结束: 忽略紧随的 click (鼠标拖拽会额外触发一次) */
+  let clickTab = null;          /* 点击滑行锁定的目标档 (null = 甩动飞行, 目标每帧取最近档) */
 
   function cacheRects() {
     visNames = []; visRects = [];
-    tbLeft = tabbar.getBoundingClientRect().left;
+    /* 基准必须是 tabbar 的"内容盒(padding 边)"左缘: 指示器的 CSS left 相对它, moveIndicator 写的
+       tab.offsetLeft 也相对它; 而 getBoundingClientRect 给的是边框盒 —— 差一个 border 宽度
+       (实测 ~0.7px)。差这 0.7px 会让边缘逻辑以为滑块一开始就出界, 用 3 倍刚度把它钉住,
+       点击切页起步那 ~150ms 的"爬"就是这么来的 */
+    const tbr = tabbar.getBoundingClientRect();
+    tbLeft = tbr.left + (parseFloat(getComputedStyle(tabbar).borderLeftWidth) || 0);
     for (const n of TAB_NAMES) {
       const el = document.getElementById('tab-' + n);
       if (!el) continue;
@@ -200,13 +209,18 @@ window.addEventListener('load', () => {
         sim.wid = P.chase(sim.wid, sim.targetW);
         render();
       } else if (mode === 'flight') {
-        /* 飞行目标随推进更新 = 最近的 tab; 甩动力度决定飞多远, 边缘缓冲负责拦住 */
-        const idx = nearestIdx(tbLeft + sim.pos + sim.wid / 2);
+        /* 飞行目标: 点击滑行锁定到点中的那一档 (移动中改点只换锁 —— 同向直接追过去,
+           反向时当前速度会带着滑块先冲过头、像撞到栏边一样回弹, 再落到新档);
+           甩动则每帧取最近档: 力度决定飞多远, 边缘缓冲负责拦住 */
+        const locked = clickTab ? visNames.indexOf(clickTab) : -1;
+        const idx = locked >= 0 ? locked : nearestIdx(tbLeft + sim.pos + sim.wid / 2);
+        if (window.__lastTgt !== idx || window.__lastLock !== locked) { window.__lastTgt = idx; window.__lastLock = locked; dbg('flight tgt=' + idx + ' locked=' + locked + ' pos=' + sim.pos.toFixed(1) + ' lock=' + clickTab); }
         sim.target  = visRects[idx].left  - tbLeft;
         sim.targetW = visRects[idx].width;
         const k = degrade >= 3 ? P.FLIGHT_K * 4 : P.FLIGHT_K;
         const c = degrade >= 3 ? P.FLIGHT_C * 2 : P.FLIGHT_C;
         P.step(sim, dt, k, c);
+        if (flTries < 10) dbg('F' + flTries + ' pos=' + sim.pos.toFixed(2) + ' vel=' + sim.vel.toFixed(0) + ' tgt=' + sim.target.toFixed(1) + ' tw=' + sim.targetW.toFixed(1) + ' k=' + k + ' c=' + c + ' dt=' + dt.toFixed(4) + ' wid=' + sim.wid.toFixed(1));
         render();
         flTries++;
         const settled = Math.abs(sim.vel) < P.SETTLE_V && Math.abs(sim.pos - sim.target) < P.SETTLE_X;
@@ -216,7 +230,7 @@ window.addEventListener('load', () => {
       dbg('CATCH ' + e.message);
       /* 任何意外都收尾复位, 绝不把滑块留在放大/半路状态 (曾因异常卡住且无法自愈) */
       try { if (window.cloudLog) cloudLog('滑块动画异常已复位: ' + e.message, 'warning'); } catch (_) {}
-      mode = 'idle';
+      mode = 'idle'; clickTab = null; _indFrozen = false;
       ind.style.translate = '';
       ind.classList.remove('grabbed');
       const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
@@ -245,6 +259,7 @@ window.addEventListener('load', () => {
     stopLoop();
     /* 落定判定必须按"实际停下的位置"取档 —— 早先按速度做衰减预估, 预测值常与弹簧
        真正停下的档位不一致, 于是落定后又被 switchTab 拽回原档 (表现为滑块突然从原位再移一次) */
+    clickTab = null; _indFrozen = false;   /* 滑行结束: 位置交回样式表 / switchTab 校正 */
     const landIdx = nearestIdx(tbLeft + sim.pos + sim.wid / 2);
     const landTab = visNames[landIdx];
     dbg('endFlight pos=' + sim.pos.toFixed(1) + ' landTab=' + landTab + ' cur=' + TAB_NAMES[_curTab]);
@@ -272,9 +287,10 @@ window.addEventListener('load', () => {
     const ir = ind.getBoundingClientRect();
     const onSlider = tx >= ir.left && tx <= ir.right && ty >= ir.top && ty <= ir.bottom;
     dbg('gstart onSlider=' + onSlider);
-    /* 按住滑块 或 飞行中任意位置按住: 截停当前运动, 转入抓取 */
-    if (onSlider || mode === 'flight') {
-      stopLoop(); mode = 'idle';
+    /* 按住滑块: 截停当前运动 (含点击滑行), 转入抓取。
+       不再"飞行中任意位置按住即截停" —— 那样点击别的档位会被当成截停, 抢掉"移动中改点跟随" */
+    if (onSlider) {
+      stopLoop(); mode = 'idle'; clickTab = null; _indFrozen = false;
       /* 抓取态不能用 getBoundingClientRect 当布局值 (含 scale(1.28) 缩放), 也不能只读
          inline left (飞行中它停在抓取前的值, 位移在 transform 里) —— 必须用视觉位置初始化,
          否则抓取瞬间位置会跳变 (曾把滑块瞬移回拖动前的位置) */
@@ -288,6 +304,7 @@ window.addEventListener('load', () => {
               max: visRects[visRects.length - 1].right - tbLeft - baseW, over: 14 };
       ind.style.transition = IND_SCALE_T;   /* 位置冻结要瞬时, 放大走独立 scale 过渡 */
       ind.style.left = baseLeft + 'px';
+    dbg('startClick.2 baseLeft=' + baseLeft.toFixed(1) + ' baseW=' + baseW.toFixed(1) + ' vis=' + visNames.join(',') + ' tgt=' + (visNames.indexOf(name) >= 0 ? (visRects[visNames.indexOf(name)].left - tbLeft).toFixed(1) : 'X'));
       ind.classList.add('grabbed');
       render();
     }
@@ -411,36 +428,55 @@ window.addEventListener('load', () => {
     onEnd();
   });
 
-  /* 点击其他标签: FLIP 两段式 —— 先无过渡固化当前视觉位, 再挂过渡滑向目标 */
+  /* 点击切页: 与甩动共用同一套弹簧, 区别只在"目标锁定"(锁到点中的那一档), 于是移动中改点
+     能自然重定向 —— 同向直接追过去; 反向时当前速度会带着滑块先冲过头 (撞到栏边的手感)
+     再回弹到新档。缩放从点下开始放大、到落定 (endFlight) 才缩回, 中途改目标不动大小 */
+  function startClickMove(name, el) {
+    dbg('startClick ' + name);
+    cacheRects();
+    if (visNames.indexOf(name) < 0) return;   /* 该档当前不可见 (被状态页隐藏): 不滑行 */
+    stopLoop();
+    mode = 'idle';
+    const lv = parseFloat(ind.style.left);
+    const curL = visualLeft();
+    baseLeft = isFinite(lv) ? curL : el.offsetLeft;   /* 内联 left 还没写过时退回该档真实位置 */
+    const curW = parseFloat(ind.style.width);
+    const baseW = (isFinite(curW) && curW > 0) ? curW : el.offsetWidth;
+    sim = { pos: baseLeft, wid: baseW, vel: 0, target: baseLeft, targetW: baseW,
+            min: visRects[0].left - tbLeft,
+            max: visRects[visRects.length - 1].right - tbLeft - baseW, over: 14 };
+    ind.style.transition = IND_SCALE_T;   /* 位置瞬时接管, 放大走弹性 scale */
+    ind.style.left = baseLeft + 'px';
+    ind.style.translate = '0px';
+    ind.classList.add('grabbed');         /* 点下即放大; 到达落定前不再动大小 */
+    clickTab = name;
+    _indFrozen = true;                    /* 这段滑行由 JS 接管: switchTab 不许写位置/清过渡 */
+    mode = 'flight'; flTries = 0;
+    switchTab(name);                      /* 页面立即切换 (与旧行为一致) */
+    startLoop(performance.now());
+  }
+  /* 移动中改点: 只换锁定目标 + 立即切页, 位置与大小都交给弹簧接着走 */
+  function retargetClickMove(name) {
+    dbg('retarget ' + name + ' curPos=' + (sim ? sim.pos.toFixed(1) : '?') + ' vel=' + (sim ? sim.vel.toFixed(0) : '?'));
+    clickTab = name;
+    switchTab(name);
+    if (!raf) { mode = 'flight'; startLoop(performance.now()); }   /* 保险: 循环必须在跑 */
+  }
+
   tabbar.addEventListener('click', e => {
     const t = e.target.closest('.tab');
     if (!t) return;
     dbg('click suppress=' + _suppressClick + ' mode=' + mode);
     if (_suppressClick) { _suppressClick = false; return; }
-    /* 拖动/飞行的收尾 click 与飞行中的点击都直接忽略:
-       飞行的落定由 endFlight 负责, 这里一旦"复位到当前档"就会把滑块
-       从半路拽回拖动前的位置 (曾把 400ms 的抑制窗当成整个飞行过程, 而飞行要 700~900ms) */
-    if (mode !== 'idle') return;
     const name = t.id.replace('tab-', '');
-    if (name === TAB_NAMES[_curTab]) return;
     const el = document.getElementById('tab-' + name);
     if (!el) return;
-    /* FLIP 顺序必须是: ①位置改动瞬时生效 (过渡只留 scale) ②强制一次重排固化视觉位
-       ③挂上过渡 ④由 switchTab 写入目标位置驱动动画。
-       反过来先写目标位置再挂过渡 → 位置已是终点, 过渡无事可做 = 瞬移 (曾犯此错) */
-    const curL = visualLeft();
-    const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
-    const curW = parseFloat(ind.style.width) || (actEl ? actEl.offsetWidth : 0);
-    ind.style.transition = IND_SCALE_T;   /* 点击的放大/缩小也走弹性 scale, 位置改动仍瞬时 */
-    ind.classList.add('grabbed');
-    ind.style.translate = '';
-    ind.style.left = curL + 'px';
-    ind.style.width = curW + 'px';
-    void ind.offsetWidth;             /* 强制重排: 上述定位立即生效 */
-    ind.style.transition = 'left .42s cubic-bezier(.3,1.6,.5,1), width .42s cubic-bezier(.3,1.6,.5,1), ' + IND_SCALE_T;
-    window._tabbarAnimating = true;   /* 这段滑动期间不让状态刷新抢 ksu 通道 (会造成卡顿) */
-    switchTab(name);                  /* 写入目标 left/width → 过渡驱动真正的滑动 */
-    setTimeout(() => { ind.classList.remove('grabbed'); ind.style.transition = ''; window._tabbarAnimating = false; }, 470);
+    /* 点击滑行中再点: 优先跟随用户 —— 换目标, 不打断 (弹簧自己决定是直接追还是先撞再弹) */
+    if (clickTab) { retargetClickMove(name); return; }
+    /* 拖动/甩动的收尾 click 与甩动飞行中的点击忽略: 落定由 endFlight 负责 */
+    if (mode !== 'idle') return;
+    if (name === TAB_NAMES[_curTab]) return;
+    startClickMove(name, el);
   });
 })();
 

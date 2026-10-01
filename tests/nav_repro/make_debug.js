@@ -41,6 +41,16 @@ ins('    if (_suppressClick) { _suppressClick = false; return; }',
     "    dbg('click suppress=' + _suppressClick + ' mode=' + mode);\n", 'before');
 ins('    if (e.button !== 0 || fromTouch(e)) return;',
     "    dbg('mousedown guard=' + fromTouch(e) + ' btn=' + e.button);\n", 'before');
+/* 点击滑行: 开局参数 / 改点 / 飞行锁与目标变化 */
+ins('  function startClickMove(name, el) {', "\n    dbg('startClick ' + name);");
+ins("    ind.style.left = baseLeft + 'px';",
+    "\n    dbg('startClick.2 baseLeft=' + baseLeft.toFixed(1) + ' baseW=' + baseW.toFixed(1) + ' vis=' + visNames.join(',') + ' tgt=' + (visNames.indexOf(name) >= 0 ? (visRects[visNames.indexOf(name)].left - tbLeft).toFixed(1) : 'X'));");
+ins('  function retargetClickMove(name) {', "\n    dbg('retarget ' + name + ' curPos=' + (sim ? sim.pos.toFixed(1) : '?') + ' vel=' + (sim ? sim.vel.toFixed(0) : '?'));");
+ins('        const idx = locked >= 0 ? locked : nearestIdx(tbLeft + sim.pos + sim.wid / 2);',
+    "\n        if (window.__lastTgt !== idx || window.__lastLock !== locked) { window.__lastTgt = idx; window.__lastLock = locked; dbg('flight tgt=' + idx + ' locked=' + locked + ' pos=' + sim.pos.toFixed(1) + ' lock=' + clickTab); }");
+/* 飞行头几帧: 步长/速度/位置/弹簧参数 —— 用来查"起步慢"这类异常 */
+ins('        P.step(sim, dt, k, c);',
+    "\n        if (flTries < 10) dbg('F' + flTries + ' pos=' + sim.pos.toFixed(2) + ' vel=' + sim.vel.toFixed(0) + ' tgt=' + sim.target.toFixed(1) + ' tw=' + sim.targetW.toFixed(1) + ' k=' + k + ' c=' + c + ' dt=' + dt.toFixed(4) + ' wid=' + sim.wid.toFixed(1));");
 // switchTab 在 IIFE 外, 直接内联 push
 s = s.replace('  _curTab = idx;', '  _curTab = idx;\n  try { (window.__navLog = window.__navLog || []).push(Math.round(performance.now()) + " switchTab " + name); } catch (_) {}');
 
