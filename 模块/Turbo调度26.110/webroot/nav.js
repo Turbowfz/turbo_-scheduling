@@ -346,16 +346,23 @@ window.addEventListener('load', () => {
     if (name === TAB_NAMES[_curTab]) return;
     const el = document.getElementById('tab-' + name);
     if (!el) return;
+    /* FLIP 顺序必须是: ①无过渡把"当前视觉位置"固化成 left/width (清掉 transform 位移)
+       ②强制一次重排让 transition:none 生效 ③挂上过渡 ④由 switchTab 写入目标位置驱动动画。
+       反过来先写目标位置再挂过渡 → 位置已是终点, 过渡无事可做 = 瞬移 (曾犯此错) */
+    const mtx = /translateX\(([-0-9.]+)px\)/.exec(ind.style.transform || '');
+    const curL = (parseFloat(ind.style.left) || 0) + (mtx ? parseFloat(mtx[1]) : 0);
+    const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
+    const curW = parseFloat(ind.style.width) || (actEl ? actEl.offsetWidth : 0);
     ind.style.transition = 'none';
     ind.classList.add('grabbed');
-    ind.style.transform = '';      /* 清掉拖拽/飞行残留的位移, 否则点击后滑块会带着旧偏移 */
-    ind.style.left = el.offsetLeft + 'px';
-    ind.style.width = el.offsetWidth + 'px';
-    void ind.offsetWidth;
-    ind.style.transition = 'left .38s cubic-bezier(.3,1.6,.5,1), width .38s cubic-bezier(.3,1.6,.5,1), transform .3s cubic-bezier(.3,1.65,.45,1)';
+    ind.style.transform = '';
+    ind.style.left = curL + 'px';
+    ind.style.width = curW + 'px';
+    void ind.offsetWidth;             /* 强制重排: 上述定位在"无过渡"下立即生效 */
+    ind.style.transition = 'left .42s cubic-bezier(.3,1.6,.5,1), width .42s cubic-bezier(.3,1.6,.5,1), transform .34s cubic-bezier(.3,1.65,.45,1)';
     window._tabbarAnimating = true;   /* 这段滑动期间不让状态刷新抢 ksu 通道 (会造成卡顿) */
-    switchTab(name);
-    setTimeout(() => { ind.classList.remove('grabbed'); ind.style.transition = ''; window._tabbarAnimating = false; }, 420);
+    switchTab(name);                  /* 写入目标 left/width → 过渡驱动真正的滑动 */
+    setTimeout(() => { ind.classList.remove('grabbed'); ind.style.transition = ''; window._tabbarAnimating = false; }, 470);
   });
 })();
 
@@ -433,7 +440,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '110c-20261001';
+  window._webuiBuild = '110d-20261001';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */
