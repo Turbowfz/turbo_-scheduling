@@ -3,26 +3,18 @@ const TAB_NAMES = ['status','config','cloud','about'];
 let _curTab = 0;
 let _tabbarDragging = false;   /* 拖拽期间阻止 switchTab 覆盖指示器位置 */
 
-/* ── 震动统一入口: navigator.vibrate 优先 (零开销), root 兜底带 250ms 节流
-   (拖动跨档高频调用 root shell 会排队卡顿) ── */
-let _vibBusy = false;
-let _lastRootVib = 0;
-window.haptic = function(ms) {
-  ms = ms || 12;
-  try {
-    if (navigator.vibrate && navigator.vibrate(ms) === true) return;
-  } catch (_) {}
-  const now = Date.now();
-  if (now - _lastRootVib < 250) return;
-  _lastRootVib = now;
-  if (_vibBusy) return;
-  _vibBusy = true;
-  try {
-    execStdout('cmd vibrator vibrate 30');
-  } catch (_) {}
-  setTimeout(() => { _vibBusy = false; }, 150);
-};
+/* ── 震动: 已按需求关闭 (原先 navigator.vibrate 失效时会落 root 兜底,
+   而 ksu 通道串行 —— 拖动跨档连震会让滑块卡顿)。保留入口与调用点, 需要时改回即可 ── */
+window.haptic = function() {};
 function tapVibrate() { haptic(); }
+
+/* 状态刷新避开滑块动画: 刷新要跑 root 命令 (ksu 通道串行), 动画期间会卡住滑块 */
+function refreshWhenIdle(fn, delay) {
+  setTimeout(function tick() {
+    if (window._tabbarAnimating) { setTimeout(tick, 120); return; }
+    try { fn(); } catch (_) {}
+  }, delay || 0);
+}
 
 function moveIndicator(tabEl) {
   if (_tabbarDragging) return;
@@ -54,8 +46,8 @@ window.switchTab = function(name) {
       c.classList.add('in');
     });
   }
-  /* 状态刷新延迟执行, 避免与震动 exec 并发排队 (ksu 通道串行会拖慢震动反馈) */
-  if (name === 'status') setTimeout(refreshStatus, 160);
+  /* 状态刷新延后到滑块动画结束: 刷新要跑 root 命令, 动画期间会把滑块卡住 */
+  if (name === 'status') refreshWhenIdle(refreshStatus, 160);
 };
 
 window.addEventListener('load', () => {
@@ -116,7 +108,7 @@ window.addEventListener('load', () => {
     const first = visRects[0], last = visRects[n - 1];
     const cx = Math.max(first.left, Math.min(last.right, x));
 
-    let best = startTab;
+    let best = lastBest;
     for (let i = 0; i < n; i++) {
       const r = visRects[i];
       if (cx >= r.left && cx <= r.right) { best = i; break; }
@@ -148,14 +140,23 @@ window.addEventListener('load', () => {
   }
 
   function render() {
-    ind.style.left = baseLeft + 'px';
+    /* left 在拖拽/飞行期间冻结为 baseLeft (抓取时写一次), 每帧只更新 transform 与 width */
     ind.style.transform = 'translateX(' + (sim.pos - baseLeft) + 'px) scale(1.28)';
     if (degrade < 1) ind.style.width = sim.wid + 'px';
   }
-  function startLoop(now) { if (!raf) { lastFrame = now || 0; raf = requestAnimationFrame(loop); } }
-  function stopLoop() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
+  function startLoop(now) {
+    window._tabbarAnimating = true;
+    if (!raf) { lastFrame = now || 0; raf = requestAnimationFrame(loop); }
+  }
+  function stopLoop() {
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    window._tabbarAnimating = false;
+  }
 
   function loop(now) {
+    /* 本帧回调已触发 → 先清掉 id: 否则末尾的续帧判断永远为假, 循环只跑一帧就死
+       (表现为滑块跟手走一下就冻住、甩动停在原地、抓取态永不摘掉) */
+    raf = 0;
     const dtMs = lastFrame ? now - lastFrame : 16;
     lastFrame = now;
     let dt = dtMs / 1000; if (dt > 0.05) dt = 0.05; if (dt <= 0) dt = 0.016;
@@ -179,17 +180,23 @@ window.addEventListener('load', () => {
       render();
       flTries++;
       const settled = Math.abs(sim.vel) < P.SETTLE_V && Math.abs(sim.pos - sim.target) < P.SETTLE_X;
-      if (settled || flTries > 240) {
-        mode = 'idle'; stopLoop();
-        sim.pos = sim.target; sim.wid = sim.targetW;
-        ind.style.left = sim.pos + 'px';
-        ind.style.width = sim.wid + 'px';
-        ind.style.transform = 'translateX(0) scale(1)';
-        ind.style.transition = '';
-        if (pendingTab) { const t = pendingTab; pendingTab = ''; switchTab(t); }
-      }
+      if (settled || flTries > 240) { endFlight(); return; }
     } else { stopLoop(); return; }
-    if (!raf) raf = requestAnimationFrame(loop);
+
+    raf = requestAnimationFrame(loop);
+  }
+
+  /* 落定: 位置/宽度落到目标档并摘掉抓取态 (switchTab 里的 moveIndicator 会用 tab 真实值再校正一次) */
+  function endFlight() {
+    mode = 'idle';
+    sim.pos = sim.target; sim.wid = sim.targetW;
+    ind.style.left = sim.pos + 'px';
+    ind.style.width = sim.wid + 'px';
+    ind.style.transform = '';      /* 清掉内联 transform, 让 CSS 的 grabbed 缩放规则重新生效 */
+    ind.style.transition = '';
+    ind.classList.remove('grabbed');
+    stopLoop();
+    if (pendingTab) { const t = pendingTab; pendingTab = ''; switchTab(t); }
   }
 
   /* 甩动力度 → 目标档 (用于提前切页): 沿速度做衰减扫描, 落点决定 tab */
@@ -230,6 +237,7 @@ window.addEventListener('load', () => {
               min: visRects[0].left - tbLeft,
               max: visRects[visRects.length - 1].right - tbLeft - baseW, over: 14 };
       ind.style.transition = 'none';
+      ind.style.left = baseLeft + 'px';
       ind.classList.add('grabbed');
       render();
     }
@@ -264,17 +272,25 @@ window.addEventListener('load', () => {
 
   function onEnd() {
     dragging = false; intentDecided = false; _tabbarDragging = false;
-    if (mode !== 'drag') { mode = 'idle'; return; }
-    /* 甩动速度: 最近两次 move (px/ms → px/s); 时间窗 120ms 外视为静止 */
+    if (mode !== 'drag') {
+      /* 只按了一下没拖动: 摘掉抓取态并把位置/宽度交回当前档, 否则会一直保持放大 */
+      if (mode === 'idle' && ind.classList.contains('grabbed')) {
+        const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
+        ind.style.transition = '';
+        ind.style.transform = '';
+        ind.classList.remove('grabbed');
+        if (actEl) { ind.style.left = actEl.offsetLeft + 'px'; ind.style.width = actEl.offsetWidth + 'px'; }
+      }
+      mode = 'idle';
+      return;
+    }
+    /* 甩动速度: 最近两次 move (px/ms → px/s); 时间窗 120ms 外视为静止。
+       初速直接进弹簧 —— 甩出距离由力度决定, 落点由 beginFlight 内部按衰减轨迹预估 */
     let v = 0;
     if (lastT && prevT && lastT - prevT > 0 && lastT - prevT < 120) {
       v = (lastX - prevX) / (lastT - prevT) * 1000;
     }
-    const tabs = P.flickTabs(Math.abs(v));
-    let ti = lastBest + (v > 0 ? 1 : -1) * tabs;
-    ti = Math.max(0, Math.min(visNames.length - 1, ti));
-    pendingTab = visNames[ti] || TAB_NAMES[_curTab];
-    beginFlight(v * 1000);
+    beginFlight(v);
     startLoop(performance.now());
   }
 
@@ -383,6 +399,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       if (document.hidden) return;
       if (TAB_NAMES[_curTab] !== 'status') return;
+      if (window._tabbarAnimating) return;   /* 滑块动画中不抢 ksu 通道 */
       await refreshStatus();
     } catch (_) {}
   }, 4000);

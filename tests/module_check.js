@@ -101,6 +101,19 @@ for (const p of walk(path.join(ROOT, MOD))) {
 }
 crlf.length ? console.log('  注意 CRLF: ' + crlf.join(', ')) : ok('文本文件全部 LF');
 
+/* 8) nav.js 用到的 physics 成员必须都存在 —— 曾漏删 flickTabs 导致松手即抛异常、
+   滑块卡在放大态 (静态语法检查抓不到, 这里跨文件对一遍) */
+{
+  const nav = read(rel('webroot/nav.js'));
+  const phy = read(rel('webroot/physics.js'));
+  const provided = new Set([...phy.matchAll(/^\s{2}([A-Za-z_]+):/gm)].map(m => m[1]));
+  const used = new Set([...nav.matchAll(/\bP\.([A-Za-z_]+)/g)].map(m => m[1]));
+  const missing = [...used].filter(x => !provided.has(x));
+  if (!provided.size) bug('physics.js 未解析出任何成员 (检查文件格式)');
+  else if (missing.length) missing.forEach(m => bug('nav.js 用了 physics 未提供的成员: P.' + m));
+  else ok('nav.js 引用的 physics 成员都在 (' + used.size + ' 个: ' + [...used].join(', ') + ')');
+}
+
 /* 7) Android 正则坑: grep/sed 的模式里不要用 \| 交替 (GNU 扩展, toybox/bionic 不支持;
    本地 Git Bash 是 GNU grep 能过, 真机上匹配不上 —— 已在 cloud_ctrl.sh 踩过一次) */
 n = 0;
