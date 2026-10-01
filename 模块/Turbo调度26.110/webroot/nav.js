@@ -219,10 +219,16 @@ window.addEventListener('load', () => {
     /* 按住滑块 或 飞行中任意位置按住: 截停当前运动, 转入抓取 */
     if (onSlider || mode === 'flight') {
       stopLoop(); mode = 'idle'; pendingTab = '';
-      baseLeft = ir.left - tbLeft;
-      sim = { pos: baseLeft, wid: ir.width, vel: 0, target: baseLeft, targetW: ir.width,
+      /* 抓取态的 rect 含 scale(1.28) 缩放, 不能当布局值用 —— 用内联样式(未缩放)初始化,
+         否则抓取瞬间位置/宽度会被缩放值污染而跳一下 */
+      const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
+      const curL = parseFloat(ind.style.left);
+      const curW = parseFloat(ind.style.width);
+      baseLeft = isFinite(curL) ? curL : (actEl ? actEl.offsetLeft : 0);
+      const baseW = (isFinite(curW) && curW > 0) ? curW : (actEl ? actEl.offsetWidth : ir.width);
+      sim = { pos: baseLeft, wid: baseW, vel: 0, target: baseLeft, targetW: baseW,
               min: visRects[0].left - tbLeft,
-              max: visRects[visRects.length - 1].right - tbLeft - ir.width, over: 14 };
+              max: visRects[visRects.length - 1].right - tbLeft - baseW, over: 14 };
       ind.style.transition = 'none';
       ind.classList.add('grabbed');
       render();
