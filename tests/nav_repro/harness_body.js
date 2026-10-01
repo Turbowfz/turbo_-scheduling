@@ -77,6 +77,7 @@ const geom = () => {
 const geomStart = geom();
 const burstDelay = (P.burstDelay === undefined) ? 20 : P.burstDelay;
 let burstTarget = '(none)';
+const tapSteps = [];
 
 if (P.mode === 'tap') {
   touchEv('touchstart', x1, y);
@@ -84,7 +85,17 @@ if (P.mode === 'tap') {
   touchEv('touchend', x1, y);
   await sleep(30);
   burstTarget = compatBurst(x1, y);
-  await sleep(1200);
+  await sleep(400);
+  /* 轻点走的是 CSS 过渡 (不是 JS 弹簧): 当测试窗格被遮挡时浏览器不给渲染帧, 动画时钟停在 0,
+     实时采样只会看到"点击后滑块不动"的假失败 —— 手动推进时间轴再读几何, 拿到的就是真实过程 */
+  try {
+    const anims = ind.getAnimations();
+    for (let ct = 0; ct <= 480; ct += 40) {
+      anims.forEach(a => { try { a.currentTime = ct; } catch (_) {} });
+      tapSteps.push(ct + ':' + ((ind.getBoundingClientRect().left + ind.getBoundingClientRect().width / 2) - tb.getBoundingClientRect().left).toFixed(1));
+    }
+  } catch (_) {}
+  await sleep(700);
 } else if (P.mode === 'intercept') {
   /* 甩动 → 飞行途中按住滑块截停 → 原地松手 (就近落档) */
   touchEv('touchstart', x0, y);
@@ -135,12 +146,19 @@ const finalFrac = +((last.c - baseC) / span).toFixed(2);
 /* 布局稳定性: 起止两次测得的各档中心必须一致 (页面漂移会让所有判定失真) */
 const stable = NAMES.every(n => (rel0[n] === undefined) === (relEnd[n] === undefined)
   && (rel0[n] === undefined || Math.abs(rel0[n] - relEnd[n]) < 2));
+const tapVals = tapSteps.map(s => +s.split(':')[1]);
+const tapUniq = new Set(tapVals).size;
+const tapFinal = tapVals.length ? tapVals[tapVals.length - 1] : null;
+const dragOk = stable && uniq >= 5 && peak > 0.5 && flash === 0 && landed === under && grabbedSamples > 0 && !ind.classList.contains('grabbed');
+const tapOk = stable && tapUniq >= 5 && tapFinal !== null && Math.abs(tapFinal - targetC) < 4
+  && landed === (P.tabTo || 'cloud') && !ind.classList.contains('grabbed');
 
 return JSON.stringify({
-  ok: stable && uniq >= 5 && peak > 0.5 && flash === 0 && landed === under && grabbedSamples > 0 && !ind.classList.contains('grabbed'),
+  ok: (P.mode === 'tap' ? tapOk : dragOk),
   stable, uniq, flash, flashAt, peak: +peak.toFixed(2), finalFrac,
   landed, under, grabbedSamples, grabbedAtEnd: ind.classList.contains('grabbed'),
   burstTarget, baseC: +baseC.toFixed(1), targetC: +targetC.toFixed(1), finalC: last.c,
+  tapUniq, tapFinal, tapSteps,
   geomStart, geomEnd: geom(),
   log: window.__navLog || [],
   samples: S.map(s => [s.t, s.c, s.g, s.tab, s.il, s.iw, s.tx, s.it])
