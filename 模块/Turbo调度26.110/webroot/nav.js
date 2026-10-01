@@ -79,6 +79,7 @@ window.addEventListener('load', () => {
   let raf = 0, lastFrame = 0, flTries = 0;
   let frameAvg = 16, degrade = 0; /* 自适应降级: 0 正常, 1 冻结宽度, 2 去模糊, 3 弹簧刚度加倍提前交 CSS */
   let prevT = 0, prevX = 0, lastT = 0, lastX = 0;   /* 速度采样: 倒数两次 move */
+  let _suppressClick = false;   /* 拖动/飞行刚结束: 忽略紧随的 click (鼠标拖拽会额外触发一次) */
 
   function cacheRects() {
     visNames = []; visRects = [];
@@ -223,15 +224,13 @@ window.addEventListener('load', () => {
     sim.max = visRects[visRects.length - 1].right - tbLeft - sim.wid;
   }
 
-  tabbar.addEventListener('touchstart', e => {
-    if (e.target.closest('.tab')) tapVibrate();
-    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+  function gestureStart(tx, ty, ts) {
+    startX = tx; startY = ty;
     cacheRects();
     lastBest = Math.max(0, visNames.indexOf(TAB_NAMES[_curTab]));
     dragging = false; intentDecided = false;
-    prevT = lastT = 0; prevX = lastX = 0;
+    prevT = lastT = ts || 0; prevX = lastX = tx;
     const ir = ind.getBoundingClientRect();
-    const tx = e.touches[0].clientX, ty = e.touches[0].clientY;
     const onSlider = tx >= ir.left && tx <= ir.right && ty >= ir.top && ty <= ir.bottom;
     /* 按住滑块 或 飞行中任意位置按住: 截停当前运动, 转入抓取 */
     if (onSlider || mode === 'flight') {
@@ -251,11 +250,11 @@ window.addEventListener('load', () => {
       ind.classList.add('grabbed');
       render();
     }
-  }, { passive: true });
+  }
 
-  tabbar.addEventListener('touchmove', e => {
-    const dx = e.touches[0].clientX - startX;
-    const dy = e.touches[0].clientY - startY;
+  function gestureMove(cx, cy, ts) {
+    const dx = cx - startX;
+    const dy = cy - startY;
     if (!intentDecided) {
       if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
       intentDecided = true;
@@ -271,14 +270,14 @@ window.addEventListener('load', () => {
     if (!dragging) return;
 
     prevT = lastT; prevX = lastX;
-    lastT = e.timeStamp; lastX = e.touches[0].clientX;
+    lastT = ts || 0; lastX = cx;
 
-    const pos = indPosForX(e.touches[0].clientX);
+    const pos = indPosForX(cx);
     if (!pos) return;
     sim.target = pos.left; sim.targetW = pos.width;
     if (pos.best !== lastBest) { lastBest = pos.best; haptic(6); }
-    startLoop(e.timeStamp);
-  }, { passive: true });
+    startLoop(ts || performance.now());
+  }
 
   function onEnd() {
     dragging = false; intentDecided = false; _tabbarDragging = false;
@@ -300,17 +299,42 @@ window.addEventListener('load', () => {
     if (lastT && prevT && lastT - prevT > 0 && lastT - prevT < 120) {
       v = (lastX - prevX) / (lastT - prevT) * 1000;
     }
+    _suppressClick = true; setTimeout(() => { _suppressClick = false; }, 400);
     beginFlight(v);
     startLoop(performance.now());
   }
 
+  /* ── 事件绑定: 触摸 (真机) 与鼠标 (桌面预览/调试) 共用同一套手势逻辑 ── */
+  tabbar.addEventListener('touchstart', e => {
+    if (e.target.closest('.tab')) tapVibrate();
+    const t0 = e.touches[0]; gestureStart(t0.clientX, t0.clientY, e.timeStamp);
+  }, { passive: true });
+  tabbar.addEventListener('touchmove', e => {
+    const t0 = e.touches[0]; gestureMove(t0.clientX, t0.clientY, e.timeStamp);
+  }, { passive: true });
   tabbar.addEventListener('touchend',    onEnd);
   tabbar.addEventListener('touchcancel', onEnd);
+  let _mouseDown = false;
+  tabbar.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    _mouseDown = true;
+    gestureStart(e.clientX, e.clientY, e.timeStamp);
+  });
+  window.addEventListener('mousemove', e => {
+    if (!_mouseDown) return;
+    gestureMove(e.clientX, e.clientY, e.timeStamp);
+  });
+  window.addEventListener('mouseup', () => {
+    if (!_mouseDown) return;
+    _mouseDown = false;
+    onEnd();
+  });
 
   /* 点击其他标签: FLIP 两段式 —— 先无过渡落到当前视觉位, 再挂弹性过渡滑向目标 */
   tabbar.addEventListener('click', e => {
     const t = e.target.closest('.tab');
     if (!t) return;
+    if (_suppressClick) { _suppressClick = false; return; }
     /* 上一次动画若异常停在中间态, 点击时先收尾复位 —— 保证一次点击就能自愈 */
     if (mode !== 'idle') {
       mode = 'idle'; stopLoop();
@@ -409,7 +433,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '110b-20261001';
+  window._webuiBuild = '110c-20261001';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */
