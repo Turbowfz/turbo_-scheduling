@@ -105,7 +105,9 @@ const rawBase = repo ? `https://gitee.com/${repo.owner}/${repo.repo}/raw/master`
 const zipUrl = zipUrlArg
   || (rawBase ? `${rawBase}/${encodeURIComponent(zipName)}` : `https://gitee.com/YOUR_GITEE_NAME/${id}/raw/master/${encodeURIComponent(zipName)}`);
 const changelogUrl = rawBase ? `${rawBase}/changelog.md` : `https://gitee.com/YOUR_GITEE_NAME/${id}/raw/master/changelog.md`;
-const today = new Date().toISOString().slice(0, 10);
+/* 本地日期: toISOString() 取的是 UTC, 在 UTC+8 的晚上会差一天 (如本地 10-03 却写成 10-02) */
+const _d = new Date();
+const today = _d.getFullYear() + '-' + String(_d.getMonth() + 1).padStart(2, '0') + '-' + String(_d.getDate()).padStart(2, '0');
 const updateJson = { version, versionCode: vcode, zipUrl, changelog: changelogUrl, lastUpdated: today };
 fs.writeFileSync(path.join(ROOT, 'update.json'), JSON.stringify(updateJson, null, 2) + '\n', 'utf8');
 console.log('已刷新 update.json');
