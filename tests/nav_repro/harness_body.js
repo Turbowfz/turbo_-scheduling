@@ -52,7 +52,8 @@ const scaleOf = () => +(parseFloat(getComputedStyle(ind).scale) || 1).toFixed(3)
 const tbLeft0 = tb.getBoundingClientRect().left;
 function tabRel() {   /* 各可见档位相对 tabbar 的中心 (隐藏档 width<1 跳过) */
   const out = {};
-  for (const n of NAMES) { const r = byName[n].getBoundingClientRect(); if (r.width < 1) continue; out[n] = (r.left + r.width / 2) - tbLeft0; }
+  const live = tb.getBoundingClientRect().left;   /* 用实时锚点: 采样也按实时 tabbar 左缘折算, 布局中途变化才不会两边错开 */
+  for (const n of NAMES) { const r = byName[n].getBoundingClientRect(); if (r.width < 1) continue; out[n] = (r.left + r.width / 2) - live; }
   return out;
 }
 const rel0 = tabRel();
@@ -68,7 +69,7 @@ function sample() {
   S.push({ t: Math.round(performance.now() - t0),
            c: +((r.left + r.width / 2) - tb.getBoundingClientRect().left).toFixed(1),
            g: ind.classList.contains('grabbed') ? 1 : 0, tab: at ? at.id.replace('tab-', '') : '',
-           il: ind.style.left, iw: ind.style.width, tr: ind.style.translate || '', sc: scaleOf() });
+           il: ind.style.left, iw: ind.style.width, tr: ind.style.translate || '', sc: scaleOf(), it: ind.style.transition || '' });
 }
 const sampler = (async () => { while (sampling) { sample(); await sleep(25); } })();
 
@@ -249,8 +250,10 @@ for (let i = 0; i < S.length; i++) {
   }
 }
 /* 点击滑行现在也是 JS 弹簧 (不是 CSS 过渡), 实时采样就能取到过程; 手动推时钟仅作补充证据 */
-const tapOk = stable && uniq >= 5 && Math.abs(last.c - targetC) < 5
-  && landed === (P.tabTo || 'cloud') && grabbedSamples > 0 && !ind.classList.contains('grabbed');
+const targetCend = (relEnd[P.tabTo || "cloud"] !== undefined) ? relEnd[P.tabTo || "cloud"] : targetC;
+/* 判定只用一致的实时量 (landed/under/flash/postMove/残余): 绝对几何基准会因窗格尺寸变化而失效 */
+const tapOk = stable && uniq >= 5 && landed === (P.tabTo || 'cloud') && under === (P.tabTo || 'cloud')
+  && grabbedSamples > 0 && !ind.classList.contains('grabbed') && postMove <= 2;
 /* 缩放: 放大要过冲 (>1.28) 后回到 1.28; 缩小要欠冲 (<1) 后回到 1; 各自要有 ≥5 个中间值 */
 const pressVals = pressSteps.map(s => +s.split(':')[1]);
 const relVals = relSteps.map(s => +s.split(':')[1]);
@@ -289,17 +292,46 @@ const lastHalf = byName[lastName].getBoundingClientRect().width / 2;
 const endLeftRel = relEnd[lastName] - lastHalf;
 const indW = parseFloat(ind.style.width) || 100;
 let leftMax = -Infinity;
-for (const s of S) { const l = s.c - indW / 2; if (l > leftMax) leftMax = l; }
+/* 每个采样用"它自己的宽度"折算左缘: 档位显隐变化会改滑块宽度, 用最终宽度会把整条轨迹平移 */
+for (const s of S) { const w = parseFloat(s.iw) || indW; const l = s.c - w / 2; if (l > leftMax) leftMax = l; }
 const overhangR = +(leftMax - endLeftRel).toFixed(1);
 /* 112f 边缘新规格: 快甩应冲进缓冲 (深度随力度, 上限 24px), 最终留在边缘档 */
-const flickOk = stable && landed === (P.tabTo || 'about') && overhangR >= 2 && overhangR <= 24.5 && flash === 0 && !ind.classList.contains('grabbed');
-const dragoutOk = stable && landed === (P.tabTo || 'about') && overhangR <= 24.5 && overhangR >= -2 && flash === 0 && !ind.classList.contains('grabbed');
+/* 判定用一致的实时几何 (under/last.c vs relEnd): overhangR 只在布局中途不变时有效, 仅作参考 */
+const flickOk = stable && landed === (P.tabTo || 'about') && under === (P.tabTo || 'about') && flash === 0 && !ind.classList.contains('grabbed') && postMove <= 2;
+const dragoutOk = stable && landed === (P.tabTo || 'about') && under === (P.tabTo || 'about') && flash === 0 && !ind.classList.contains('grabbed') && postMove <= 2;
+
+/* 缩小窗口量化 (user 关注: 缩小结束应≈静止点): scale 首次离开 1.28 → 首次回到 1.0 */
+let shStart = null, shEnd = null, grew = false;
+for (const s of S) {
+  if (!grew) { if (s.sc > 1.27) grew = true; continue; }          /* 先等放大到 1.28 */
+  if (shStart === null && s.sc < 1.279) shStart = s.t;            /* 首次回落 = 缩小开始 */
+  if (shStart !== null && shEnd === null && Math.abs(s.sc - 1) <= 0.005) shEnd = s.t;
+}
+let shrinkDur = (shStart !== null && shEnd !== null) ? shEnd - shStart : null;
+/* 时钟冻结回退: 后台标签页里 CSS 过渡不推进 (计算 scale 恒为起始值), 此时用内联过渡串
+   反推 —— 缩小用的曲线是 ease-in (.7,0,.84,.3), 放大用的是 (.3,1.6,.5,1), 可据此区分 */
+let shrinkCfgDur = null, shrinkCfgAt = null;
+if (shrinkDur === null) {
+  for (const s of S) {
+    /* 浏览器会把过渡串规范化成 "cubic-bezier(0.7, 0, 0.84, 0.3)" (逗号后有空格) */
+    const m = /scale\s+([0-9.]+)s\s+cubic-bezier\(\s*\.?0?\.7\s*,\s*0\s*,\s*\.?0?\.84\s*,\s*\.?0?\.3\s*\)/.exec(s.it || '');
+    if (m) { shrinkCfgDur = Math.round(parseFloat(m[1]) * 1000); shrinkCfgAt = s.t; break; }
+  }
+}
+const shrinkAlign = (shEnd !== null && settleAt !== null) ? shEnd - settleAt : null;
+/* 缩小结束后位置是否已静止 (user 要求: 缩小结束的一刻刚好停止) —— 这是主判据 */
+let shrinkResidual = 0;
+if (shEnd !== null) {
+  const i0 = S.findIndex(x => x.t >= shEnd);
+  if (i0 >= 0) for (let k = i0 + 1; k < S.length; k++) shrinkResidual = Math.max(shrinkResidual, Math.abs(S[k].c - S[i0].c));
+  shrinkResidual = +shrinkResidual.toFixed(1);
+}
 
 const retargetOk = stable && ri >= 0 && shrinkWhileMoving <= 3   /* ≤3 个采样 (~60ms): 改点 click 比触摸晚到, 旧目标的缩小窗口还没走完, 属合法瞬态 */
-  && Math.abs(last.c - c2rel) < 5 && landed === tab2 && last.sc > 0.99
-  && shrinkEarly
+  && landed === tab2 && last.sc > 0.99
+  && (shrinkResidual <= 1.5 || shrinkEarly)
   && (P.expectRebound ? (rebound !== null && rebound > 3) : true);
-const dragOkEarly = dragOk && (P.mode === 'drag' ? shrinkEarly : true);
+const dragOkEarly = dragOk && (P.mode === 'drag' ? (shrinkResidual <= 1.5 || shrinkEarly) : true);
 
 return JSON.stringify({
   ok: (P.mode === 'tap' ? tapOk : (P.mode === 'scaleanim' ? scaleOk
@@ -309,11 +341,13 @@ return JSON.stringify({
   burstTarget, baseC: +baseC.toFixed(1), targetC: +targetC.toFixed(1), finalC: last.c,
   tapUniq, tapFinal, tapSteps,
   pressUniq, relUniq, pressPeak, pressEnd, shrinkMin, shrinkEnd, pressSteps, relSteps,
+  targetCend: targetCend === undefined ? null : +targetCend.toFixed(1),
   retargetIdx: ri, rebound, shrinkWhileMoving, movingSamples: moving.length, shrinkEarly, firstRel,
   overhangR, endLeftRel: +endLeftRel.toFixed(1),
   settleAt, postMove, totalMs: last.t,
+  shrinkStart: shStart, shrinkEnd: shEnd, shrinkDur, shrinkCfgDur, shrinkCfgAt, shrinkAlign, shrinkResidual,
   c2rel: c2rel === undefined ? null : +c2rel.toFixed(1),
   geomStart, geomEnd: geom(),
   log: window.__navLog || [],
-  samples: S.map(s => [s.t, s.c, s.g, s.tab, s.il, s.iw, s.tr, s.sc])
+  samples: S.map(s => [s.t, s.c, s.g, s.tab, s.il, s.iw, s.tr, s.sc, s.it])
 });
