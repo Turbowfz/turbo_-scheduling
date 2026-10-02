@@ -43,8 +43,15 @@ done
 sleep 10
 mkdir -p "$TARGET_DIR"
 am force-stop com.omarea.vtools 2>/dev/null
-# cp -af 原样保留备份里的属主/上下文/权限; 全目录 chmod 会摸 ctime 触发热加载
-[ -d "$BACKUP_DIR" ] && cp -af "$BACKUP_DIR/." "$TARGET_DIR/" 2>/dev/null
+# 只还原配置类文件 (json/sh/conf, 不分大小写): 备份里没有的东西一律不动, 不覆盖用户数据。
+# cp -af 原样保留备份里的属主/上下文/权限 (守护脚本必须自包含, 不能依赖模块里的 common.sh)
+if [ -d "$BACKUP_DIR" ]; then
+  find "$BACKUP_DIR" -type f \( -iname '*.json' -o -iname '*.sh' -o -iname '*.conf' \) 2>/dev/null | while IFS= read -r f; do
+    rel="${f#"$BACKUP_DIR"/}"
+    case "$rel" in */*) mkdir -p "$TARGET_DIR/${rel%/*}" 2>/dev/null ;; esac
+    cp -af "$f" "$TARGET_DIR/$rel" 2>/dev/null
+  done
+fi
 
 if [ -d "/data/adb/turbo" ]; then
   am force-stop com.oplus.cosa 2>/dev/null

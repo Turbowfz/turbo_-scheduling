@@ -46,6 +46,41 @@ prepare_scene_dir() {
   return 0
 }
 
+# ── Scene 配置备份范围: 只碰配置文件 ──
+# 只处理 json / sh / conf (扩展名不分大小写, 覆盖 .conf 与 .CONF)。
+# Scene 目录下的其它数据文件 (缓存/数据库/素材/日志等) 与本模块无关 ——
+# 备份它们既臃肿, 还原时还可能把用户数据覆盖回去, 所以一律不碰。
+# 用 find 递归: files/ 下的子目录同样按扩展名筛选, 相对路径原样保留。
+scene_cfg_list() {   # $1=目录; 输出匹配文件的完整路径
+  [ -d "$1" ] || return 0
+  find "$1" -type f \( -iname '*.json' -o -iname '*.sh' -o -iname '*.conf' \) 2>/dev/null
+}
+
+scene_cfg_copy() {   # $1=源目录 $2=目标目录 (cp -af 原样保留属主/上下文/权限, 还原时一字不差)
+  local src="$1" dst="$2" f rel
+  [ -d "$src" ] || return 0
+  mkdir -p "$dst" 2>/dev/null
+  scene_cfg_list "$src" | while IFS= read -r f; do
+    rel="${f#"$src"/}"
+    case "$rel" in */*) mkdir -p "$dst/${rel%/*}" 2>/dev/null ;; esac
+    cp -af "$f" "$dst/$rel" 2>/dev/null
+  done
+}
+
+scene_cfg_prune() {  # $1=备份目录; 删掉备份里不属于配置类的文件 (老版本备份了整个目录, 迁移用)
+  local dir="$1" before after f d
+  [ -d "$dir" ] || return 0
+  before=$(find "$dir" -type f 2>/dev/null | wc -l | tr -d ' ')
+  find "$dir" -type f ! \( -iname '*.json' -o -iname '*.sh' -o -iname '*.conf' \) 2>/dev/null | while IFS= read -r f; do
+    rm -f "$f" 2>/dev/null
+  done
+  # 清掉因此变空的子目录 (-depth: 先深后浅, 嵌套空目录也能清干净)
+  find "$dir" -mindepth 1 -depth -type d 2>/dev/null | while IFS= read -r d; do rmdir "$d" 2>/dev/null; done
+  after=$(find "$dir" -type f 2>/dev/null | wc -l | tr -d ' ')
+  [ "${before:-0}" -gt "${after:-0}" ] && log "已清理备份中非配置文件 $((before - after)) 个 (只保留 json/sh/conf)"
+  return 0
+}
+
 # ── Scene 备份还原 (返回0=成功可清理, 1=失败必须保留备份) ──
 restore_scene_now() {
   [ -f "$FLAG_DIR/sc_installed" ] || return 0
@@ -53,14 +88,18 @@ restore_scene_now() {
   am force-stop com.omarea.vtools 2>/dev/null
   prepare_scene_dir 30 || return 1
   if [ -d "$FLAG_DIR/backup" ]; then
-    # cp -af 原样保留备份里的属主/上下文/权限; 全目录 chmod 会摸 ctime 触发热加载
-    cp -af "$FLAG_DIR/backup/." "$VT_FILES/" 2>/dev/null
-    local bf ok=1
-    for bf in "$FLAG_DIR/backup"/*.json; do
-      [ -f "$bf" ] || continue
-      [ -f "$VT_FILES/${bf##*/}" ] || ok=0
-    done
-    [ "$ok" = "1" ] || { log "错误: 还原失败 (备份未生效), 已保留备份"; return 1; }
+    # 只还原配置类文件 (json/sh/conf): 备份里没有的东西一律不动 (不覆盖用户数据)
+    scene_cfg_copy "$FLAG_DIR/backup" "$VT_FILES"
+    # 校验: 备份里的每个配置文件都要回到目标目录 (逐条比对, 不看总数 —— 目标目录本来就有别的文件)
+    local bf rel miss=0 list="$FLAG_DIR/.restore_list"
+    scene_cfg_list "$FLAG_DIR/backup" > "$list" 2>/dev/null
+    while IFS= read -r bf; do
+      [ -n "$bf" ] || continue
+      rel="${bf#"$FLAG_DIR/backup"/}"
+      [ -f "$VT_FILES/$rel" ] || miss=$((miss + 1))
+    done < "$list"
+    rm -f "$list" 2>/dev/null
+    [ "$miss" = "0" ] || { log "错误: 还原失败 (备份未生效, 缺 $miss 个文件), 已保留备份"; return 1; }
   fi
   start_official
   return 0

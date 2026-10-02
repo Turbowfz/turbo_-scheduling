@@ -52,11 +52,16 @@ deploy_config() {
 create_backup() {
   local backup_dir="$FLAG_DIR/backup"
   mkdir -p "$backup_dir"
-  if [ -z "$(ls "$backup_dir"/*.json 2>/dev/null)" ] && [ -d "$VT_FILES" ]; then
-    # 不做 chmod -R: cp -af 原样保留属主/上下文/权限, 还原时一字不差放回
-    cp -af "$VT_FILES/." "$backup_dir/" 2>/dev/null
-    log "备份Scene原始配置完成"
+  # 已有备份 (以 *.json 为标志) → 只做一次迁移清理: 老版本备份了整个目录, 现在只留 json/sh/conf。
+  # 绝不在此时重新拷贝: 备份必须是"本模块改动之前"的原始文件, 当前目录里的已经是改过的了
+  if [ -n "$(ls "$backup_dir"/*.json 2>/dev/null)" ]; then
+    scene_cfg_prune "$backup_dir"
+    return 0
   fi
+  [ -d "$VT_FILES" ] || return 0
+  # 只备份配置类文件 (json/sh/conf, 扩展名不分大小写); 不做 chmod -R: cp -af 原样保留属主/上下文/权限
+  scene_cfg_copy "$VT_FILES" "$backup_dir"
+  log "备份Scene原始配置完成 (仅 json/sh/conf)"
 }
 
 # 权限仅在不一致时才改 (chmod 同值也更新 ctime, 触发热加载)
