@@ -61,7 +61,23 @@ document.addEventListener('DOMContentLoaded', async () => {
           cloudLog('game_config 已存在', 'warning'); return; }
         /* 骨架 (user 指定): 空键也保留 (即使是空的也不删) */
         _baseObj.game_config = {
-          ctb: 1, htb: 1, ctep: 80, ctn: '', cht_boost_max: '', cht_boost_min: '', rgr: 1, perfd: { status: true, sde: 0 }, }; renderBaseForm(); cloudLog('已添加 game_config (只可编辑 cht_boost_max/cht_boost_min/ctn/ctep, 点"保存"写入 cccf)', 'success'); return; }
+          ctb: 1, htb: 1, ctep: 80, ctn: '', cht_boost_max: '', cht_boost_min: '', rgr: 1, perfd: { status: true, sde: 0 }, };
+        /* user 要求: 添加 game_config 后, gpa_config 的每个帧率档位 —— 包括没有频率参数的档位 ——
+           都要补上 chtb:{enable:true} (GPA 侧的 CHTB 总闸, 不写就不生效; 本档位跑到的帧率才生效,
+           所以每档都要开)。未分档的全局平铺形态则直接挂在 gpa_config 上。
+           已存在 chtb 的档位保留用户的值, 只补缺失的 enable */
+        const gpaCfg = (_baseObj.gpa_config && typeof _baseObj.gpa_config === 'object') ? _baseObj.gpa_config : null;
+        const patched = [];
+        const ensureChtb = (host, label) => {
+          if (!host.chtb || typeof host.chtb !== 'object') { host.chtb = { enable: true }; patched.push(label); }
+          else if (host.chtb.enable === undefined) { host.chtb.enable = true; patched.push(label); }
+        };
+        if (gpaCfg) {
+          const tiers = Object.keys(gpaCfg).filter(k => /^\d+$/.test(k) && gpaCfg[k] && typeof gpaCfg[k] === 'object');
+          if (tiers.length) tiers.forEach(k => ensureChtb(gpaCfg[k], k + 'Hz'));
+          else ensureChtb(gpaCfg, '全局');
+        }
+        renderBaseForm(); cloudLog('已添加 game_config (只可编辑 cht_boost_max/cht_boost_min/ctn/ctep, 点"保存"写入 cccf)' + (patched.length ? '; 已给 gpa 补上 chtb.enable: ' + patched.join('/') : '; gpa 里没有可补的档位'), 'success'); return; }
 
       /* gpa_config 子块添加: 支持没有 es4g/mema 的官方配置 */
       if (t.hasAttribute('data-gpa-add')) {
