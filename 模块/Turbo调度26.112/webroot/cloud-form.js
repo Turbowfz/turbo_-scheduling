@@ -22,7 +22,7 @@ const FI = {
   tl: { k: 'tl', n: '中核频率下限', t: '中核(5-6)保底档: 中核是主力核, 抬底频对稳定感最明显. -1=自动 (共32档 0~31)' },
   th: { k: 'th', n: '中核频率上限', t: '中核(5-6)封顶档: 中核一般跑系统杂活, 压低它不影响游戏主体' },
   core: { k: 'core', n: '核心参与表', t: '逗号 8 值对应 8 颗核: 1=这颗核允许参与关键任务调度, -1=不限制/默认 (解析默认全 -1)' },
-  chtbEnable: { k: 'chtb enable', n: '提频总闸', t: 'Critical & Heavy Task Boost 总闸 (解析默认 0=false): 给游戏的关键线程与重负载线程单独拉频率, 配套数值在 game_config 里 (cht_boost_max/min、ctn、ctep). 本档位跑到的帧率才生效, 所以每个帧率档位都要开; 勾选即写入 chtb:{enable:true} (添加 game_config 时会自动给各档位补上)' },
+  chtbEnable: { k: 'chtb enable', n: '提频总闸 (默认开)', t: 'Critical & Heavy Task Boost 总闸: 给游戏的关键线程与重负载线程单独拉频率, 配套数值在 game_config 里 (cht_boost_max/min、ctn、ctep). 本档位跑到的帧率才生效, 所以每个帧率档位都要开. 默认开启 —— 配置里没写这个键时按 true 处理, 保存会写入 chtb:{enable:true}; 只有显式设了 enable:false 才是关' },
   /* ── gpa_config.es4g 关键线程隔离 (给游戏最要命的几个线程圈专属包厢) ── */
   es4gState: { k: 'es4g state', n: '蜂鸟总开关', t: 'true=进游戏启用关键线程隔离, 本块其它设置随之生效' },
   es4gIsolate: { k: 'es4g isolate', n: '隔离核表', t: '10 进制掩码, 第 N 位=CPU N, 如 144=0b10010000=CPU4+CPU7. 最多 3 个值, 强度递增: ①核上有任务也照抢 ②高优先任务来抢时才隔离 ③绝对隔离(闲着也不给别人)' },
@@ -79,6 +79,13 @@ function fieldCheck(key, id, checked) {
 function gv(obj, path) {
   return path.split('.').reduce((o, k) => (o && o[k] !== undefined ? o[k] : null), obj);
 }
+/* chtb (关键/重负载提频总闸) 默认开: 没写这个键就按 true 显示 —— 开关默认勾选,
+   保存时会写回 chtb:{enable:true}; 只有配置里显式写了 enable:false 才显示为关闭 */
+function chtbOn(g) {
+  const c = g && typeof g === 'object' ? g.chtb : null;
+  if (c && typeof c === 'object' && c.enable !== undefined) return !!c.enable;
+  return true;
+}
 function sv(root, path, val) {
   const keys = path.split('.'); let cur = root; for (let i = 0; i < keys.length - 1; i++) {
     if (!cur[keys[i]] || typeof cur[keys[i]] !== 'object') cur[keys[i]] = {}; cur = cur[keys[i]]; }
@@ -133,7 +140,7 @@ function renderBaseForm() {
     html += `<div class="cf-sec">gpa_config (${flatGpa ? '全局配置' : '帧率档位'})</div>`; html += `<div class="cf-hint">${flatGpa ? '当前官方配置未按 60/90/120 分档, 以下为全局 GPA 参数' : '帧率档位: 60/90/120 等 · 档位=该簇频率表下标(从 0 起, 由低到高), -1=自动/不限'} · 只显示核心上下限, core, chtb, es4g, mema</div>`; fpsList.forEach(fps => {
       const g = flatGpa ? gpa : (gpa[fps] || {}); const gp = flatGpa ? '' : fps + '.'; html += `<details class="cf-gp"${firstOpen(fps)}><summary>◆ ${escapeHTML(fpsLabel(fps))}</summary><div class="cf-gp-body">`; /* 仅编辑核心频率上下限 + 开关核心 */
       html += fieldRow('cl', 'gpa.' + gp + 'cl', gv(g, 'cl')); html += fieldRow('ch', 'gpa.' + gp + 'ch', gv(g, 'ch')); html += fieldRow('sm', 'gpa.' + gp + 'sm', gv(g, 'sm')); html += fieldRow('gf', 'gpa.' + gp + 'gf', gv(g, 'gf')); html += fieldRow('gm', 'gpa.' + gp + 'gm', gv(g, 'gm')); html += fieldRow('tl', 'gpa.' + gp + 'tl', gv(g, 'tl')); html += fieldRow('th', 'gpa.' + gp + 'th', gv(g, 'th')); html += fieldRow('core', 'gpa.' + gp + 'core', gv(g, 'core')); /* chtb: 关键/重负载任务提频总闸 (没有配置也能勾选创建; 添加 game_config 时自动补齐) */
-      html += `<div class="cf-fps">▸ chtb (关键/重负载提频总闸)</div>`; html += fieldCheck('chtbEnable', 'gpa.' + gp + 'chtb.enable', !!(g.chtb && typeof g.chtb === 'object' ? g.chtb.enable : undefined)); /* es4g: 没有配置也显示添加入口 */
+      html += `<div class="cf-fps">▸ chtb (关键/重负载提频总闸)</div>`; html += fieldCheck('chtbEnable', 'gpa.' + gp + 'chtb.enable', chtbOn(g)); /* es4g: 没有配置也显示添加入口 */
       {
         const es4g = g.es4g && typeof g.es4g === 'object' ? g.es4g : null; html += `<div class="cf-fps">▸ es4g (蜂鸟核心隔离)<span style="flex:1"></span><button type="button" class="btn" data-gpa-add="es4g" data-gpa-fps="${escapeHTML(fps)}" style="padding:4px 10px;font-size:var(--fs-xs)">${es4g ? '已有' : '添加'}</button></div>`; if (es4g) {
           html += fieldRow('es4gIsolate', 'gpa.' + gp + 'es4g.isolate', gv(es4g, 'isolate')); html += fieldCheck('es4gState', 'gpa.' + gp + 'es4g.state', !!gv(es4g, 'state')); html += fieldRow('es4gTcount', 'gpa.' + gp + 'es4g.tcount', gv(es4g, 'tcount')); html += fieldRow('es4gClist', 'gpa.' + gp + 'es4g.clist', gv(es4g, 'clist')); html += fieldRow('es4gFps', 'gpa.' + gp + 'es4g.fps', gv(es4g, 'fps')); html += fieldRow('es4gDelay', 'gpa.' + gp + 'es4g.delay', gv(es4g, 'delay')); html += fieldCheck('es4gPartial', 'gpa.' + gp + 'es4g.partial', !!gv(es4g, 'partial')); }
@@ -204,8 +211,16 @@ function collectBaseForm() {
   if (!_baseObj) return null; const obj = _baseObj; document.querySelectorAll('#cf-base-form input[id]').forEach(el => {
     const id = el.id; const isGpa = id.startsWith('gpa.'), isTf = id.startsWith('tf.'), isFs = id.startsWith('fps_stabilizer.'); const isCpu = id.startsWith('cpu.'), isGz = id.startsWith('gz.'), isGc = id.startsWith('game_config.'); if (!isGpa && !isTf && !isFs && !isCpu && !isGz && !isGc) return; if (el.tagName === 'TEXTAREA') return; /* JSON 域在下方 textarea 统一处理 */
     const existed = _baseExisted.has(id) || (isFs && gv(obj, id) !== null); const orig = _baseOrig[id]; let val; if (el.type === 'checkbox') {
-      if (!el.checked && !existed) return; /* 未勾选且原本没有 → 不新增 */
-      val = el.checked; } else {
+      /* chtb 总闸默认开: 未勾选 = 用户显式选择关闭, 必须写出 enable:false ——
+         若沿用"未勾选且原本没有就不新增"的通用规则, 取消勾选会被静默忽略 (关不掉) */
+      if (el.id.endsWith('chtb.enable')) {
+        if (!el.checked) { sv(obj, realIdPath(el.id), false); return; }
+        val = true;
+      } else {
+        if (!el.checked && !existed) return; /* 未勾选且原本没有 → 不新增 */
+        val = el.checked;
+      }
+    } else {
       const t = el.value.trim(); if (t === '') {
         if (!existed) return; /* 原本没有该键 → 不新增 */
         if (orig === null) return; /* 原值为 null → 原样保留 */
