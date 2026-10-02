@@ -188,7 +188,6 @@ inject_configs() {
   start gameopt_hal_service-1-0 2>/dev/null
   start vendor.urcc-hal-aidl 2>/dev/null
   start oiface 2>/dev/null
-  start horae 2>/dev/null
 
   log "=== 注入模式结束 ==="
   return "$INJECT_FAILED"

@@ -5,7 +5,7 @@
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-COMMON="$HERE/../模块/Turbo调度26.107/scripts/common.sh"
+COMMON="$HERE/../模块/Turbo调度26.112/scripts/common.sh"
 [ -f "$COMMON" ] || { echo "找不到 common.sh"; exit 1; }
 
 PASS=0; FAIL=0

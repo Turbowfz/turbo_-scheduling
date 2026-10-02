@@ -215,7 +215,7 @@ window.restartCosa = async function() {
       `killall com.oplus.cosa 2>/dev/null; sleep 2; ` +
       `setprop persist.sys.oplus.gameswitch.enable 1; ` +
       `start gameopt_hal_service-1-0 2>/dev/null; start vendor.urcc-hal-aidl 2>/dev/null; ` +
-      `start oiface 2>/dev/null; start horae 2>/dev/null`, 20000); cloudLog('应用增强服务已重启', 'success'); cloudLog('提示: 稍等数秒待服务完全拉起', 'info'); });
+      `start oiface 2>/dev/null`, 20000); cloudLog('应用增强服务已重启', 'success'); cloudLog('提示: 稍等数秒待服务完全拉起', 'info'); });
 }; /* 刷新数据库配置: 把 cccf 当前配置重新注入数据库 (cosa sync) */
 window.refreshDbConfig = async function() {
   await withBusy(document.getElementById('cosa-refresh-btn'), async () => {

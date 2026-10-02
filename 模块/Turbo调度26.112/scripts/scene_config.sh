@@ -253,7 +253,7 @@ install_mode() {
     rm -f "$FLAG_DIR/sc_installed" "$FLAG_DIR/config_type"
     log "用户跳过二改调度"
     # 从通用版改回跳过时, 必须把 stop_official 关掉的 persist 属性拉回来:
-    # persist.* 跨重启保留, 不还原会让官方风驰/horae 一直停摆且无人恢复
+    # persist.* 跨重启保留, 不还原会让官方风驰一直停摆且无人恢复
     start_official
     is_oplus && ask_cloud_only
     return 1

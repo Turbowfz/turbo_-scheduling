@@ -57,11 +57,9 @@ fi
 # 还原官方调度属性/服务 (与 start_official 对齐)
 setprop persist.sys.oiface.enable 1
 setprop persist.sys.oplus.gameswitch.enable 1
-setprop persist.sys.horae.enable 1
 start vendor.urcc-hal-aidl 2>/dev/null
 start gameopt_hal_service-1-0 2>/dev/null
 start oiface 2>/dev/null
-start horae 2>/dev/null
 
 rm -rf "$BACKUP_DIR"
 rm -f "$SELF"

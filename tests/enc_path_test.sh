@@ -5,7 +5,7 @@
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-SRC="$HERE/../模块/Turbo调度26.105/scripts/cloud_ctrl.sh"
+SRC="$HERE/../模块/Turbo调度26.112/scripts/cloud_ctrl.sh"
 [ -f "$SRC" ] || { echo "找不到 cloud_ctrl.sh"; exit 1; }
 
 # 抽出真实代码 (不复制, 避免与源码漂移): run_inject 与 .enc 分支

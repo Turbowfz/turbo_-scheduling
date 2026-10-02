@@ -152,14 +152,12 @@ wait_key_timeout() {
   done
 }
 
-# ── 官方调度服务 (含 horae; orms 仅停止时管) ──
+# ── 官方调度服务 (orms 仅停止时管) ──
 start_official() {
   log "恢复官方调度服务"
   setprop persist.sys.oiface.enable 1
   setprop persist.sys.oplus.gameswitch.enable 1
-  setprop persist.sys.horae.enable 1
   start oiface 2>/dev/null
-  start horae 2>/dev/null
   start gameopt_hal_service-1-0 2>/dev/null
   start vendor.urcc-hal-aidl 2>/dev/null
 }

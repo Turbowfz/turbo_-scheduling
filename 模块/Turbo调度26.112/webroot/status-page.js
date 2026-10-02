@@ -32,7 +32,6 @@ window.fetchSystemStatus = async function() {
     `ct=$([ -f '${FLAG_DIR}/sc_installed' ] && cat '${FLAG_DIR}/config_type' 2>/dev/null | tr -d '\\r\\n' || echo '-'); ` +
     `gov=$(cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor 2>/dev/null | tr -d '\\r\\n'); ` +
     `of=$(pgrep -f '[o]iface' >/dev/null 2>&1 && echo 1 || echo 0); ` +
-    `ho=$(pgrep -f '[h]orae' >/dev/null 2>&1 && echo 1 || echo 0); ` +
     `ur=$(pgrep -f '[u]rcc' >/dev/null 2>&1 && echo 1 || echo 0); ` +
     `go=$(pgrep -f '[g]ameopt' >/dev/null 2>&1 && echo 1 || echo 0); ` +
     /* 机型名 (上市名) 跨品牌读取链, 依次兜底:
@@ -59,25 +58,24 @@ window.fetchSystemStatus = async function() {
     `[ -z "$soc" ] && soc=$(getprop ro.board.platform 2>/dev/null | tr -d '\\r\\n'); ` +
     `plt=$(getprop ro.board.platform 2>/dev/null | tr -d '\\r\\n'); ` +
     `kern=$(uname -r 2>/dev/null | tr -d '\\r\\n'); ` +
-    `printf '%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s' "$sc" "$rc" "$ct" "$gov" "$of" "$ho" "$ur" "$go" "$mkt" "$mdl" "$soc" "$plt" "$kern"`
+    `printf '%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s' "$sc" "$rc" "$ct" "$gov" "$of" "$ur" "$go" "$mkt" "$mdl" "$soc" "$plt" "$kern"`
   );
   const parts = raw.split(SEP);
-  /* exec 通道失败/超时时 raw 为空 (不足13段): 返回 null, 由 applySystemStatus 显示"未知" */
-  if (parts.length < 13) return null;
+  /* exec 通道失败/超时时 raw 为空 (不足12段): 返回 null, 由 applySystemStatus 显示"未知" */
+  if (parts.length < 12) return null;
   return {
     scene: (parts[0] || '').trim() === '1',
     rc:    (parts[1] || '').trim() === '1',
     configType: (parts[2] || '').trim() || '--',
     governor:   (parts[3] || '').trim() || '--',
     oiface:  (parts[4] || '').trim() === '1',
-    horae:   (parts[5] || '').trim() === '1',
-    urcc:    (parts[6] || '').trim() === '1',
-    gameopt: (parts[7] || '').trim() === '1',
-    marketname: (parts[8] || '').trim(),
-    model:      (parts[9] || '').trim(),
-    soc:        (parts[10] || '').trim(),
-    platform:   (parts[11] || '').trim(),
-    kernel:     (parts[12] || '').trim()
+    urcc:    (parts[5] || '').trim() === '1',
+    gameopt: (parts[6] || '').trim() === '1',
+    marketname: (parts[7] || '').trim(),
+    model:      (parts[8] || '').trim(),
+    soc:        (parts[9] || '').trim(),
+    platform:   (parts[10] || '').trim(),
+    kernel:     (parts[11] || '').trim()
   };
 };
 
@@ -127,7 +125,6 @@ window.applySystemStatus = function(status) {
     el.style.color = unknown ? '' : (alive ? 'var(--ok)' : 'var(--er)');
   };
   setProc('s2-oiface', status.oiface);
-  setProc('s2-horae', status.horae);
   setProc('s2-urcc', status.urcc);
   setProc('s2-gameopt', status.gameopt);
   applyDevUI(status.scene);
