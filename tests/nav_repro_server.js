@@ -42,8 +42,11 @@ http.createServer((req, res) => {
       if (v.css) html = html.replace(/glass-style\.css\?v=[\w.-]+/g, 'glass-style.css?nav=' + variant);
     }
     /* 测试稳定剂: 页面内容(操作日志/卡片)会让滚动条反复出现又消失, 整页横向漂移几像素,
-       使"绝对坐标采样"失真 —— 测试期间禁掉根滚动, 布局就固定了 (不影响被测逻辑) */
-    html = html.replace('</head>', '<style>html,body{overflow:hidden !important}</style></head>');
+       使"绝对坐标采样"失真 —— 测试期间禁掉根滚动, 布局就固定了 (不影响被测逻辑)。
+       ?stab=0 关掉它, 用来复现"切页引起布局位移 → 飞行用过期坐标"这类问题 */
+    if (u.searchParams.get('stab') !== '0') {
+      html = html.replace('</head>', '<style>html,body{overflow:hidden !important}</style></head>');
+    }
     body = Buffer.from(html, 'utf8');
   }
   res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': 'no-store' });

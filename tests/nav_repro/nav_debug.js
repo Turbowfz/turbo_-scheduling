@@ -219,19 +219,38 @@ window.addEventListener('load', () => {
         sim.target  = visRects[idx].left  - tbLeft;
         sim.targetW = visRects[idx].width;
         const k = degrade >= 3 ? P.FLIGHT_K * 4 : P.FLIGHT_K;
-        const c = degrade >= 3 ? P.FLIGHT_C * 2 : P.FLIGHT_C;
+        let c = degrade >= 3 ? P.FLIGHT_C * 2 : P.FLIGHT_C;
+        /* 端点着陆制动: 端点档就是边缘 —— 普通甩动/点按的动量必须被档位本身吸收,
+           否则自然过冲会误触边缘缓冲 ("正常不会碰到边缘")。目标是行进方向的端点档
+           且正在向它逼近时, 按速度/距离追加阻尼; 用力再猛也会被刹在档位上,
+           边缘缓冲只留给"拖出边缘"的手势 */
+        const toT = sim.target - sim.pos;
+        const dirEnd = sim.vel * toT > 0 && (idx === visRects.length - 1 || idx === 0);
+        if (dirEnd) c = P.landingC(sim.vel, k, c, toT);
+        /* 与 step 内部同一条稳定性钳制: 落定时间估算必须用"实际生效"的阻尼 */
+        c = Math.min(c, 0.9 / dt);
+        /* 边缘缓冲只归"用力越过端点"的手势: 低速越过 (自然过冲/慢拖出界后松手) 不启用 */
+        if (!sim.edgeOn && Math.abs(sim.vel) > P.EDGE_V_GATE &&
+            (sim.pos > sim.max || sim.pos < sim.min)) sim.edgeOn = true;
         P.step(sim, dt, k, c);
-        if (flTries < 10) dbg('F' + flTries + ' pos=' + sim.pos.toFixed(2) + ' vel=' + sim.vel.toFixed(0) + ' tgt=' + sim.target.toFixed(1) + ' tw=' + sim.targetW.toFixed(1) + ' k=' + k + ' c=' + c + ' dt=' + dt.toFixed(4) + ' wid=' + sim.wid.toFixed(1));
+        if (flTries < 10) dbg('F' + flTries + ' pos=' + sim.pos.toFixed(2) + ' vel=' + sim.vel.toFixed(0) + ' tgt=' + sim.target.toFixed(1) + ' k=' + k + ' c=' + c + ' edge=' + (sim.edgeOn ? 1 : 0) + ' min=' + sim.min.toFixed(1) + ' max=' + sim.max.toFixed(1) + ' over=' + sim.over + ' wid=' + sim.wid.toFixed(1) + ' baseL=' + baseLeft.toFixed(1));
         render();
         flTries++;
-        /* 缩放提前收 (需求: "将要变为静止时开始缩小, 缩小完成时刚好静止"):
-           弹簧的包络按 e^(-c/2·t) 衰减, 用当前与目标的距离反推还要多久落定;
-           剩余时间 ≤ 缩放过渡时长 (.34s, 留 20ms 帧余量) 时就摘掉 grabbed 让 scale
-           开始缩回, 位置继续由弹簧收尾 —— 缩小走完, 滑块恰好静止 */
+        /* 数值兜底: 任何 NaN/Infinity 都立即落定 (endFlight 写的是有限的目标值) */
+        if (!isFinite(sim.pos) || !isFinite(sim.vel)) { endFlight(); return; }
+        /* 缩放提前收 (需求: "将要变为静止时开始缩小, 缩小结束时滑块刚好停止运动"):
+           弹簧包络按 e^(-c/2·t) 衰减, 用当前与目标的距离反推还要多久落定 (tRem);
+           进入最后一段 (≤0.42s) 就开始缩回, 且缩放过渡的"时长=剩余滑行时间"、
+           曲线用后段加载 (ease-in) —— 尺寸的变化集中在最后一段, 过渡结束的一刻
+           正好是静止点。用弹性曲线时视觉上 ~半程就已回到 1.0, 之后的位置滑行
+           看起来就像"缩小完了还在动" (user 复测指出的) */
         if (!shrinkStarted) {
           const d = Math.abs(sim.pos - sim.target);
-          if (d > P.SETTLE_X && Math.log(d / P.SETTLE_X) / (c / 2) <= 0.36) {
+          const tRem = Math.log(d / P.SETTLE_X) / (c / 2);
+          if (d > P.SETTLE_X && tRem <= 0.42) {
             shrinkStarted = true;
+            const dur = Math.min(0.42, Math.max(0.18, tRem)).toFixed(2);
+            ind.style.transition = 'scale ' + dur + 's cubic-bezier(.7,0,.84,.3)';
             ind.classList.remove('grabbed');
           }
         }
@@ -280,7 +299,7 @@ window.addEventListener('load', () => {
 
   /* 释放入弹簧: 初速决定滑行距离 (无档位上限), 目标每帧跟随最近档, 边缘缓冲负责拦住 */
   function beginFlight(vpx) {
-    mode = 'flight'; flTries = 0; shrinkStarted = false;
+    mode = 'flight'; flTries = 0; shrinkStarted = false; sim.edgeOn = false;
     sim.vel = vpx;                       /* px/s, 甩动力度直接进弹簧 */
     sim.over = 14;                       /* 边缘缓冲区: 最远冲出 14px */
     sim.min = visRects[0].left - tbLeft;
@@ -313,10 +332,9 @@ window.addEventListener('load', () => {
       const baseW = (isFinite(curW) && curW > 0) ? curW : (actEl ? actEl.offsetWidth : ir.width);
       sim = { pos: baseLeft, wid: baseW, vel: 0, target: baseLeft, targetW: baseW,
               min: visRects[0].left - tbLeft,
-              max: visRects[visRects.length - 1].right - tbLeft - baseW, over: 14 };
+              max: visRects[visRects.length - 1].right - tbLeft - baseW, over: 14, edgeOn: false };
       ind.style.transition = IND_SCALE_T;   /* 位置冻结要瞬时, 放大走独立 scale 过渡 */
       ind.style.left = baseLeft + 'px';
-    dbg('startClick.2 baseLeft=' + baseLeft.toFixed(1) + ' baseW=' + baseW.toFixed(1) + ' vis=' + visNames.join(',') + ' tgt=' + (visNames.indexOf(name) >= 0 ? (visRects[visNames.indexOf(name)].left - tbLeft).toFixed(1) : 'X'));
       ind.classList.add('grabbed');
       render();
     }
@@ -332,7 +350,7 @@ window.addEventListener('load', () => {
       dragging = true; _tabbarDragging = true; mode = 'drag';
       sim.min = visRects[0].left - tbLeft;
       sim.max = visRects[visRects.length - 1].right - tbLeft - sim.wid;
-      sim.over = 0;
+      sim.over = 14;   /* 拖动允许把滑块带出端点最多一个缓冲区 ("拖动稍微超过边缘") */
       ind.style.transition = IND_SCALE_T;   /* 拖拽中位置/宽度跟手要瞬时, 缩放保持弹性 */
       ind.classList.add('grabbed');
       haptic(10);
@@ -345,6 +363,13 @@ window.addEventListener('load', () => {
     const pos = indPosForX(cx);
     if (!pos) return;
     sim.target = pos.left; sim.targetW = pos.width;
+    /* 拖出端点的部分: 目标允许越过端点最多 over (缓冲区) —— 松手后低速由弹簧拉回档位,
+       高速才由边缘缓冲减速回弹 (EDGE_V_GATE 门限) */
+    if (visRects.length) {
+      const lastR = visRects[visRects.length - 1], firstR = visRects[0];
+      if (cx > lastR.right) sim.target = Math.min(sim.max + sim.over, sim.target + (cx - lastR.right));
+      else if (cx < firstR.left) sim.target = Math.max(sim.min - sim.over, sim.target - (firstR.left - cx));
+    }
     if (pos.best !== lastBest) { lastBest = pos.best; haptic(6); }
     startLoop(ts || performance.now());
   }
@@ -388,16 +413,20 @@ window.addEventListener('load', () => {
       return;
     }
     /* 甩动速度: 最近两次 move (px/ms → px/s); 时间窗 120ms 外视为静止。
-       初速直接进弹簧 —— 甩出距离由力度决定, 落点由 beginFlight 内部按衰减轨迹预估 */
+       初速直接进弹簧 —— 甩出距离由力度决定; 上限防事件时间戳抖动算出的假速度
+       (两帧落在同一毫秒会算出几万 px/s, 把弹簧打进不稳定区) */
     let v = 0;
     if (lastT && prevT && lastT - prevT > 0 && lastT - prevT < 120) {
       v = (lastX - prevX) / (lastT - prevT) * 1000;
+      const vmax = P.MAX_RELEASE_V;
+      if (v > vmax) v = vmax; else if (v < -vmax) v = -vmax;
     }
     /* 本手势的收尾 click 一律忽略 (鼠标拖拽必发一次 click; 触摸的兼容 click 可能迟到,
        晚于飞行落定)。标记不设定时器 —— 留到下一次手势开始才清 (见 gestureStart):
        click 到达的时刻在"飞行中/刚落定"之间浮动, 定时器永远猜不准 */
     _suppressClick = true;
     beginFlight(v);
+    dbg('onEnd v=' + v.toFixed(0) + ' pos=' + sim.pos.toFixed(1) + ' baseL=' + baseLeft.toFixed(1) + ' min=' + sim.min.toFixed(1) + ' max=' + sim.max.toFixed(1) + ' over=' + sim.over);
     startLoop(performance.now());
   }
 
@@ -440,6 +469,23 @@ window.addEventListener('load', () => {
     onEnd();
   });
 
+  /* 档位集合变了 (状态刷新切换「配置/云控」两档的显隐) → 每个档的宽度都变, 滑块按旧宽度
+     放在旧位置就对不上了。这里重取几何并把它"瞬间"归位到当前档: 不加过渡是因为整栏此刻
+     正在重排, 让它跟着一起瞬间落位才自然 (若让它滑过去, 看起来就是"落定后又挪一小段")。
+     动画/飞行中不抢位置 —— 飞行每帧都用 visRects 重算目标, 重取几何后它自己会修正 */
+  window.syncTabIndicator = function () {
+    cacheRects();
+    if (mode !== 'idle' || _indFrozen || _tabbarDragging) return;
+    const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
+    if (!actEl || !visNames.length) return;
+    ind.style.transition = 'none';
+    ind.style.translate = '';
+    ind.style.left = actEl.offsetLeft + 'px';
+    ind.style.width = actEl.offsetWidth + 'px';
+    void ind.offsetWidth;
+    ind.style.transition = '';
+  };
+
   /* 点击切页: 与甩动共用同一套弹簧, 区别只在"目标锁定"(锁到点中的那一档), 于是移动中改点
      能自然重定向 —— 同向直接追过去; 反向时当前速度会带着滑块先冲过头 (撞到栏边的手感)
      再回弹到新档。缩放从点下开始放大、到落定 (endFlight) 才缩回, 中途改目标不动大小 */
@@ -456,11 +502,12 @@ window.addEventListener('load', () => {
     const baseW = (isFinite(curW) && curW > 0) ? curW : el.offsetWidth;
     sim = { pos: baseLeft, wid: baseW, vel: 0, target: baseLeft, targetW: baseW,
             min: visRects[0].left - tbLeft,
-            max: visRects[visRects.length - 1].right - tbLeft - baseW, over: 14 };
+            max: visRects[visRects.length - 1].right - tbLeft - baseW, over: 14, edgeOn: false };
     ind.style.transition = IND_SCALE_T;   /* 位置瞬时接管, 放大走弹性 scale */
     ind.style.left = baseLeft + 'px';
     ind.style.translate = '0px';
     ind.classList.add('grabbed');         /* 点下即放大; 到达落定前不再动大小 */
+    dbg('startClick.2 baseLeft=' + baseLeft.toFixed(1) + ' baseW=' + baseW.toFixed(1) + ' vis=' + visNames.join(',') + ' tgt=' + (visNames.indexOf(name) >= 0 ? (visRects[visNames.indexOf(name)].left - tbLeft).toFixed(1) : 'X'));
     clickTab = name;
     _indFrozen = true;                    /* 这段滑行由 JS 接管: switchTab 不许写位置/清过渡 */
     mode = 'flight'; flTries = 0; shrinkStarted = false;
@@ -574,7 +621,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '112b-20261003';
+  window._webuiBuild = '112e-20261003';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */

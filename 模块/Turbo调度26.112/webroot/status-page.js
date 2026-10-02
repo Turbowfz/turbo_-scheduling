@@ -96,9 +96,15 @@ window.applySystemStatus = function(status) {
   /* 页面显隐: 未启用二改调度隐藏短视频包名页, 未启用云控注入隐藏云控页
      (对应功能未部署时其配置文件/数据库流程均无意义, 状态未知时也隐藏以防误操作) */
   const tCfg = document.getElementById('tab-config');
-  if (tCfg) tCfg.style.display = (!unknown && status.scene) ? '' : 'none';
   const tCld = document.getElementById('tab-cloud');
-  if (tCld) tCld.style.display = (!unknown && status.rc) ? '' : 'none';
+  const cfgWant = (!unknown && status.scene) ? '' : 'none';
+  const cldWant = (!unknown && status.rc) ? '' : 'none';
+  /* 只在真的变化时改动 + 通知滑块复位: 这两档一显一隐, 全部档位的宽度都会变,
+     滑块(按旧宽度放在旧位置)就会"落定后又挪一小段" —— 状态刷新恰好被排在滑块动画结束后执行 */
+  let tabsChanged = false;
+  if (tCfg && tCfg.style.display !== cfgWant) { tCfg.style.display = cfgWant; tabsChanged = true; }
+  if (tCld && tCld.style.display !== cldWant) { tCld.style.display = cldWant; tabsChanged = true; }
+  if (tabsChanged && window.syncTabIndicator) window.syncTabIndicator();
   /* 系统信息: 设备型号 marketname(model), 芯片 soc(platform) */
   const sKern = document.getElementById('s-kern'); if (sKern) sKern.textContent = status.kernel;
   const sModel = document.getElementById('s-model');

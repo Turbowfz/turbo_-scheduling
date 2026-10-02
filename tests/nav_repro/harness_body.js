@@ -27,10 +27,26 @@ if (P.showAllTabs) {
   }
 }
 
-/* rAF 垫片: 后台标签页 rAF 不触发, 用真实时钟驱动的 setTimeout 代替 */
-window.requestAnimationFrame = cb => setTimeout(() => cb(performance.now()), 16);
-window.cancelAnimationFrame = id => clearTimeout(id);
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+/* ── 时钟: ZCode 主窗口在后台时页面 setTimeout 被钳到 1Hz, 手势节奏/采样/弹簧全乱。
+   用 Worker 的 postMessage 当 16ms 心跳 (Worker 计时器不受页面节流), 所有等待都数心跳 ── */
+let __tickWaiters = [], __worker = null;
+function ensureTicker() {
+  if (__worker !== null) return;
+  try {
+    __worker = new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage(0)},16)'], { type: 'text/javascript' })));
+    __worker.onmessage = () => { const w = __tickWaiters; __tickWaiters = []; for (const f of w) f(); };
+  } catch (_) { __worker = false; }
+}
+function nextTick() {
+  return new Promise(r => {
+    ensureTicker();
+    if (__worker) __tickWaiters.push(r); else setTimeout(r, 16);
+  });
+}
+const sleep = async ms => { const n = Math.max(1, Math.round(ms / 16)); for (let i = 0; i < n; i++) await nextTick(); };
+/* rAF 垫片: 后台标签页 rAF 不触发/节流, 用心跳时钟代替 */
+window.requestAnimationFrame = cb => nextTick().then(() => cb(performance.now()));
+window.cancelAnimationFrame = () => {};
 const scaleOf = () => +(parseFloat(getComputedStyle(ind).scale) || 1).toFixed(3);
 
 const tbLeft0 = tb.getBoundingClientRect().left;
@@ -42,17 +58,19 @@ function tabRel() {   /* 各可见档位相对 tabbar 的中心 (隐藏档 width
 const rel0 = tabRel();
 const baseC = rel0[P.tabFrom || 'status'], targetC = rel0[P.tabTo || 'cloud'];
 
-/* ── 采样: 位置 (相对 tabbar 的中心) + 缩放 (计算值, 反映过渡中间态) ── */
+/* ── 采样: 位置 (相对 tabbar 的中心) + 缩放 (计算值) —— 异步心跳循环 (不用 setInterval, 会被节流) ── */
 const S = [];
 const t0 = performance.now();
-const timer = setInterval(() => {
+let sampling = true;
+function sample() {
   const r = ind.getBoundingClientRect();
   const at = document.querySelector('.tab.active');
   S.push({ t: Math.round(performance.now() - t0),
            c: +((r.left + r.width / 2) - tb.getBoundingClientRect().left).toFixed(1),
            g: ind.classList.contains('grabbed') ? 1 : 0, tab: at ? at.id.replace('tab-', '') : '',
            il: ind.style.left, iw: ind.style.width, tr: ind.style.translate || '', sc: scaleOf() });
-}, 25);
+}
+const sampler = (async () => { while (sampling) { sample(); await sleep(25); } })();
 
 function touchEv(type, x, y) {
   const t = new Touch({ identifier: 7, target: tb, clientX: x, clientY: y, pageX: x, pageY: y });
@@ -104,14 +122,13 @@ let burstTarget = '(none)';
 const tapSteps = [], pressSteps = [], relSteps = [];
 
 if (P.mode === 'tap') {
+  /* 点按已改走 JS 弹簧: 实时采样即可取到过程 (手动推动画时钟会把 scale 过渡快进, 反而失真) */
   touchEv('touchstart', x1, y);
   await sleep(40);
   touchEv('touchend', x1, y);
   await sleep(30);
   burstTarget = compatBurst(x1, y);
-  await sleep(400);
-  try { tapSteps.push(...stepAnim(0, 480, 40, relStep)); } catch (_) {}
-  await sleep(700);
+  await sleep(1900);
 } else if (P.mode === 'scaleanim') {
   /* 缩放过程: ①按住滑块 → 放大 (应过冲 >1.28 再回落) ②原地松手 → 缩小 (应欠冲 <1 再回弹) */
   touchEv('touchstart', x0, y);
@@ -132,6 +149,40 @@ if (P.mode === 'tap') {
   touchEv('touchstart', x2, y); await sleep(30); touchEv('touchend', x2, y);
   await sleep(30); compatBurst(x2, y);
   await sleep(1800);
+} else if (P.mode === 'flick' || P.mode === 'dragout') {
+  /* flick: 快速短甩向端点档 (力度大) —— 期望端点制动吸收动量, 落在端点档, 不碰边缘缓冲
+     dragout: 慢速把滑块拖出端点边缘再松手 —— 期望弹簧/缓冲拉回端点档 */
+  const isFlick = P.mode === 'flick';
+  const lastR = byName[NAMES[NAMES.length - 1]].getBoundingClientRect();
+  const edgeX = lastR.right;                       /* 栏右缘 (视口坐标) */
+  const startXDrag = rectCenter(from);
+  if (isFlick) {
+    touchEv('touchstart', startXDrag, y);
+    await sleep(25);
+    touchEv('touchmove', startXDrag + (x1 - x0) * 0.6, y);
+    await sleep(25);
+    touchEv('touchmove', x1, y);                   /* 最后两帧跨度大 → 松手速度高 */
+    touchEv('touchend', x1, y);
+    await sleep(2000);
+  } else {
+    const dragV = P.dragV || 200;                  /* 松手速度: 慢拖 ~100-200, 快拖 ~600 */
+    const hold = P.holdMs || 350;
+    touchEv('touchstart', startXDrag, y);
+    await sleep(40);
+    /* 慢慢拖过最后一段并越过右缘 30px */
+    const segs = 8;
+    for (let i = 1; i <= segs; i++) {
+      await sleep(hold / segs);
+      const fx = startXDrag + (edgeX + 30 - startXDrag) * (i / segs);
+      touchEv('touchmove', fx, y);
+    }
+    /* 松手速度由最后两次 move 决定: 再拖一小段, 时长 = 距离/速度 */
+    const tail = 30;
+    touchEv('touchmove', edgeX + 30 + tail, y);
+    await sleep(Math.max(16, tail / dragV * 1000));
+    touchEv('touchend', edgeX + 60, y);
+    await sleep(2000);
+  }
 } else if (P.mode === 'intercept') {
   /* 甩动 → 飞行途中按住滑块截停 → 原地松手 (就近落档) */
   touchEv('touchstart', x0, y);
@@ -158,7 +209,7 @@ if (P.mode === 'tap') {
   if (burstDelay >= 0) { await sleep(burstDelay); burstTarget = compatBurst(x1, y); }
   await sleep(1800);
 }
-clearInterval(timer);
+sampling = false; await sleep(40); sample();
 
 /* ── 判定 (相对坐标) ── */
 const relEnd = tabRel();
@@ -187,6 +238,16 @@ const dragOk = stable && uniq >= 5 && peak > 0.5 && flash === 0 && landed === un
 const tapVals = tapSteps.map(s => +s.split(':')[1]);
 const tapUniq = new Set(tapVals).size;
 const tapFinal = tapVals.length ? tapVals[tapVals.length - 1] : null;
+/* 落定后残余位移 (user 问 "落下来后还会移动一小段"): 找到第一次进入"终值 ±1px"并从此不再
+   离开的位置, 之后的最大偏离就是残余位移; settleAt 是它出现的时刻 */
+let settleAt = null, postMove = 0;
+for (let i = 0; i < S.length; i++) {
+  if (S.slice(i).every(s => Math.abs(s.c - last.c) <= 1.0)) {
+    settleAt = S[i].t;
+    postMove = +Math.max(0, ...S.slice(i).map(s => Math.abs(s.c - last.c))).toFixed(2);
+    break;
+  }
+}
 /* 点击滑行现在也是 JS 弹簧 (不是 CSS 过渡), 实时采样就能取到过程; 手动推时钟仅作补充证据 */
 const tapOk = stable && uniq >= 5 && Math.abs(last.c - targetC) < 5
   && landed === (P.tabTo || 'cloud') && grabbedSamples > 0 && !ind.classList.contains('grabbed');
@@ -220,20 +281,36 @@ if (firstRel >= 0) {
   const after = S.slice(firstRel + 1);
   shrinkEarly = after.some((s, i) => Math.abs(s.c - (i ? after[i - 1].c : S[firstRel].c)) > 2);
 }
-const retargetOk = stable && ri >= 0 && shrinkWhileMoving === 0
+/* 边缘规则: 滑块 left (中心−半宽) 相对端点档左缘的最大超出。
+   端点档左缘 = 端点档中心 − 档宽/2 = 滑块落定在端点档时的 left (= sim.max)。
+   超出 ≤2.5px = 完全没碰缓冲; ≤14px = 进了缓冲但被钳住; 更大 = 飞出 */
+const lastName = NAMES[NAMES.length - 1];
+const lastHalf = byName[lastName].getBoundingClientRect().width / 2;
+const endLeftRel = relEnd[lastName] - lastHalf;
+const indW = parseFloat(ind.style.width) || 100;
+let leftMax = -Infinity;
+for (const s of S) { const l = s.c - indW / 2; if (l > leftMax) leftMax = l; }
+const overhangR = +(leftMax - endLeftRel).toFixed(1);
+const flickOk = stable && landed === (P.tabTo || 'about') && overhangR <= 2.5 && flash === 0 && !ind.classList.contains('grabbed');
+const dragoutOk = stable && landed === (P.tabTo || 'about') && overhangR <= 15 && overhangR >= -2 && flash === 0 && !ind.classList.contains('grabbed');
+
+const retargetOk = stable && ri >= 0 && shrinkWhileMoving <= 3   /* ≤3 个采样 (~60ms): 改点 click 比触摸晚到, 旧目标的缩小窗口还没走完, 属合法瞬态 */
   && Math.abs(last.c - c2rel) < 5 && landed === tab2 && last.sc > 0.99
   && shrinkEarly
   && (P.expectRebound ? (rebound !== null && rebound > 3) : true);
 const dragOkEarly = dragOk && (P.mode === 'drag' ? shrinkEarly : true);
 
 return JSON.stringify({
-  ok: (P.mode === 'tap' ? tapOk : (P.mode === 'scaleanim' ? scaleOk : (P.mode === 'retarget' ? retargetOk : dragOkEarly))),
+  ok: (P.mode === 'tap' ? tapOk : (P.mode === 'scaleanim' ? scaleOk
+    : (P.mode === 'retarget' ? retargetOk : (P.mode === 'flick' ? flickOk : (P.mode === 'dragout' ? dragoutOk : dragOkEarly))))),
   stable, uniq, flash, flashAt, peak: +peak.toFixed(2), finalFrac,
   landed, under, grabbedSamples, grabbedAtEnd: ind.classList.contains('grabbed'),
   burstTarget, baseC: +baseC.toFixed(1), targetC: +targetC.toFixed(1), finalC: last.c,
   tapUniq, tapFinal, tapSteps,
   pressUniq, relUniq, pressPeak, pressEnd, shrinkMin, shrinkEnd, pressSteps, relSteps,
   retargetIdx: ri, rebound, shrinkWhileMoving, movingSamples: moving.length, shrinkEarly, firstRel,
+  overhangR, endLeftRel: +endLeftRel.toFixed(1),
+  settleAt, postMove, totalMs: last.t,
   c2rel: c2rel === undefined ? null : +c2rel.toFixed(1),
   geomStart, geomEnd: geom(),
   log: window.__navLog || [],
