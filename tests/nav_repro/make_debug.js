@@ -47,8 +47,8 @@ ins('  function startClickMove(name, el) {', "\n    dbg('startClick ' + name);")
 ins('    ind.classList.add(\'grabbed\');         /* 点下即放大; 到达落定前不再动大小 */',
     "\n    dbg('startClick.2 baseLeft=' + baseLeft.toFixed(1) + ' baseW=' + baseW.toFixed(1) + ' vis=' + visNames.join(',') + ' tgt=' + (visNames.indexOf(name) >= 0 ? (visRects[visNames.indexOf(name)].left - tbLeft).toFixed(1) : 'X'));");
 ins('  function retargetClickMove(name) {', "\n    dbg('retarget ' + name + ' curPos=' + (sim ? sim.pos.toFixed(1) : '?') + ' vel=' + (sim ? sim.vel.toFixed(0) : '?'));");
-ins('        const idx = locked >= 0 ? locked : nearestIdx(tbLeft + sim.pos + sim.wid / 2);',
-    "\n        if (window.__lastTgt !== idx || window.__lastLock !== locked) { window.__lastTgt = idx; window.__lastLock = locked; dbg('flight tgt=' + idx + ' locked=' + locked + ' pos=' + sim.pos.toFixed(1) + ' lock=' + clickTab); }");
+ins('          : (locked >= 0 ? locked : nearestIdx(tbLeft + sim.pos + sim.wid / 2));',
+    "\n        if (window.__lastTgt !== idx || window.__lastLock !== locked) { window.__lastTgt = idx; window.__lastLock = locked; dbg('flight tgt=' + idx + ' locked=' + locked + ' pos=' + sim.pos.toFixed(1) + ' lock=' + clickTab + ' edge=' + (sim.edgeOn ? 1 : 0)); }");
 /* 松手速度与边缘状态: 查 NaN / 缓冲启用 */
 ins('    beginFlight(v);', "\n    dbg('onEnd v=' + v.toFixed(0) + ' pos=' + sim.pos.toFixed(1) + ' baseL=' + baseLeft.toFixed(1) + ' min=' + sim.min.toFixed(1) + ' max=' + sim.max.toFixed(1) + ' over=' + sim.over);");
 /* 飞行头几帧: 步长/速度/位置/弹簧参数 —— 用来查"起步慢"/NaN 这类异常 */

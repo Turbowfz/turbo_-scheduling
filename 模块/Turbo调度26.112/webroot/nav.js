@@ -206,25 +206,30 @@ window.addEventListener('load', () => {
       } else if (mode === 'flight') {
         /* 飞行目标: 点击滑行锁定到点中的那一档 (移动中改点只换锁 —— 同向直接追过去,
            反向时当前速度会带着滑块先冲过头、像撞到栏边一样回弹, 再落到新档);
-           甩动则每帧取最近档: 力度决定飞多远, 边缘缓冲负责拦住 */
+           甩动则每帧取最近档: 力度决定飞多远, 边缘缓冲负责拦住。
+           edgeTab: 撞过边缘后目标锁死在边缘档 —— 回弹途中最近档会翻回里面一档,
+           不锁的话滑块最终就落在里面那档而不是边缘档 (user 要求撞边后只留边缘页) */
         const locked = clickTab ? visNames.indexOf(clickTab) : -1;
-        const idx = locked >= 0 ? locked : nearestIdx(tbLeft + sim.pos + sim.wid / 2);
+        const idx = (sim.edgeTab !== null && sim.edgeTab !== undefined) ? sim.edgeTab
+          : (locked >= 0 ? locked : nearestIdx(tbLeft + sim.pos + sim.wid / 2));
         sim.target  = visRects[idx].left  - tbLeft;
         sim.targetW = visRects[idx].width;
         const k = degrade >= 3 ? P.FLIGHT_K * 4 : P.FLIGHT_K;
         let c = degrade >= 3 ? P.FLIGHT_C * 2 : P.FLIGHT_C;
-        /* 端点着陆制动: 端点档就是边缘 —— 普通甩动/点按的动量必须被档位本身吸收,
-           否则自然过冲会误触边缘缓冲 ("正常不会碰到边缘")。目标是行进方向的端点档
-           且正在向它逼近时, 按速度/距离追加阻尼; 用力再猛也会被刹在档位上,
-           边缘缓冲只留给"拖出边缘"的手势 */
-        const toT = sim.target - sim.pos;
-        const dirEnd = sim.vel * toT > 0 && (idx === visRects.length - 1 || idx === 0);
-        if (dirEnd) c = P.landingC(sim.vel, k, c, toT);
+        /* 端点不做着陆制动: 到达端点档的剩余动量自然冲进边缘缓冲 —— 深度/减速时长
+           随甩动力度增长 (有 24px 硬上限), 由缓冲物理软着陆, 最终留在边缘档 */
         /* 与 step 内部同一条稳定性钳制: 落定时间估算必须用"实际生效"的阻尼 */
         c = Math.min(c, 0.9 / dt);
-        /* 边缘缓冲只归"用力越过端点"的手势: 低速越过 (自然过冲/慢拖出界后松手) 不启用 */
+        /* 边缘缓冲只归"用力越过端点"的手势: 低速越过 (自然过冲/慢拖出界后松手) 不启用。
+           启用判定用"本帧预测位置" —— 高速帧一步就跨过缓冲区, 事后启用会先飞出钳位一帧。
+           启用瞬间: 缓冲深度按越过速度折算 (力度越大冲得越深、减速越久), 钳在 14~24px */
+        const nextPos = sim.pos + sim.vel * dt;
         if (!sim.edgeOn && Math.abs(sim.vel) > P.EDGE_V_GATE &&
-            (sim.pos > sim.max || sim.pos < sim.min)) sim.edgeOn = true;
+            (nextPos > sim.max || nextPos < sim.min || sim.pos > sim.max || sim.pos < sim.min)) {
+          sim.edgeOn = true;
+          sim.edgeTab = sim.vel > 0 ? visRects.length - 1 : 0;
+          sim.over = Math.min(P.EDGE_OVER_MAX, Math.max(P.EDGE_OVER_MIN, Math.abs(sim.vel) / P.EDGE_OVER_VK));
+        }
         P.step(sim, dt, k, c);
         render();
         flTries++;
@@ -282,16 +287,20 @@ window.addEventListener('load', () => {
     /* 落定判定必须按"实际停下的位置"取档 —— 早先按速度做衰减预估, 预测值常与弹簧
        真正停下的档位不一致, 于是落定后又被 switchTab 拽回原档 (表现为滑块突然从原位再移一次) */
     clickTab = null; _indFrozen = false;   /* 滑行结束: 位置交回样式表 / switchTab 校正 */
-    const landIdx = nearestIdx(tbLeft + sim.pos + sim.wid / 2);
+    /* 撞过边缘的飞行: 落定档直接取锁定的边缘档 (user: 撞边后最终只留在边缘的那个页面);
+       位置此刻就在边缘档上, nearestIdx 也只会给出它 —— 显式取值只是把意图写明 */
+    const landIdx = (sim.edgeTab !== null && sim.edgeTab !== undefined)
+      ? sim.edgeTab : nearestIdx(tbLeft + sim.pos + sim.wid / 2);
+    sim.edgeTab = null;
     const landTab = visNames[landIdx];
     if (landTab && landTab !== TAB_NAMES[_curTab]) switchTab(landTab);
   }
 
   /* 释放入弹簧: 初速决定滑行距离 (无档位上限), 目标每帧跟随最近档, 边缘缓冲负责拦住 */
   function beginFlight(vpx) {
-    mode = 'flight'; flTries = 0; shrinkStarted = false; sim.edgeOn = false;
+    mode = 'flight'; flTries = 0; shrinkStarted = false; sim.edgeOn = false; sim.edgeTab = null;
     sim.vel = vpx;                       /* px/s, 甩动力度直接进弹簧 */
-    sim.over = 14;                       /* 边缘缓冲区: 最远冲出 14px */
+    sim.over = P.EDGE_OVER_MIN;          /* 边缘缓冲深度: 启用瞬间按力度重折算 (14~24px) */
     sim.min = visRects[0].left - tbLeft;
     sim.max = visRects[visRects.length - 1].right - tbLeft - sim.wid;
   }
@@ -320,7 +329,7 @@ window.addEventListener('load', () => {
       const baseW = (isFinite(curW) && curW > 0) ? curW : (actEl ? actEl.offsetWidth : ir.width);
       sim = { pos: baseLeft, wid: baseW, vel: 0, target: baseLeft, targetW: baseW,
               min: visRects[0].left - tbLeft,
-              max: visRects[visRects.length - 1].right - tbLeft - baseW, over: 14, edgeOn: false };
+              max: visRects[visRects.length - 1].right - tbLeft - baseW, over: P.EDGE_OVER_MIN, edgeOn: false, edgeTab: null };
       ind.style.transition = IND_SCALE_T;   /* 位置冻结要瞬时, 放大走独立 scale 过渡 */
       ind.style.left = baseLeft + 'px';
       ind.classList.add('grabbed');
@@ -485,7 +494,7 @@ window.addEventListener('load', () => {
     const baseW = (isFinite(curW) && curW > 0) ? curW : el.offsetWidth;
     sim = { pos: baseLeft, wid: baseW, vel: 0, target: baseLeft, targetW: baseW,
             min: visRects[0].left - tbLeft,
-            max: visRects[visRects.length - 1].right - tbLeft - baseW, over: 14, edgeOn: false };
+            max: visRects[visRects.length - 1].right - tbLeft - baseW, over: P.EDGE_OVER_MIN, edgeOn: false, edgeTab: null };
     ind.style.transition = IND_SCALE_T;   /* 位置瞬时接管, 放大走弹性 scale */
     ind.style.left = baseLeft + 'px';
     ind.style.translate = '0px';
@@ -601,7 +610,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '112e-20261003';
+  window._webuiBuild = '112f-20261003';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */

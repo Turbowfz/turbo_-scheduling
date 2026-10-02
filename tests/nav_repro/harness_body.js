@@ -291,8 +291,9 @@ const indW = parseFloat(ind.style.width) || 100;
 let leftMax = -Infinity;
 for (const s of S) { const l = s.c - indW / 2; if (l > leftMax) leftMax = l; }
 const overhangR = +(leftMax - endLeftRel).toFixed(1);
-const flickOk = stable && landed === (P.tabTo || 'about') && overhangR <= 2.5 && flash === 0 && !ind.classList.contains('grabbed');
-const dragoutOk = stable && landed === (P.tabTo || 'about') && overhangR <= 15 && overhangR >= -2 && flash === 0 && !ind.classList.contains('grabbed');
+/* 112f 边缘新规格: 快甩应冲进缓冲 (深度随力度, 上限 24px), 最终留在边缘档 */
+const flickOk = stable && landed === (P.tabTo || 'about') && overhangR >= 2 && overhangR <= 24.5 && flash === 0 && !ind.classList.contains('grabbed');
+const dragoutOk = stable && landed === (P.tabTo || 'about') && overhangR <= 24.5 && overhangR >= -2 && flash === 0 && !ind.classList.contains('grabbed');
 
 const retargetOk = stable && ri >= 0 && shrinkWhileMoving <= 3   /* ≤3 个采样 (~60ms): 改点 click 比触摸晚到, 旧目标的缩小窗口还没走完, 属合法瞬态 */
   && Math.abs(last.c - c2rel) < 5 && landed === tab2 && last.sc > 0.99
