@@ -210,20 +210,31 @@ const peakAfter = ri >= 0 ? Math.max(...S.slice(ri).map(s => s.c)) : null;
 const rebound = (beforeR !== null && peakAfter !== null) ? +(peakAfter - beforeR).toFixed(1) : null;
 const moving = S.filter((s, i) => i > 0 && Math.abs(s.c - S[i - 1].c) > 2);
 /* 大小是否在移动中变化: 看驱动的类 (grabbed) 而不是计算值 —— 窗格被遮挡时 CSS 过渡时钟不走,
-   计算值会停在起点造成假失败; 过渡曲线本身由 scaleanim 模式(手动推时钟)单独验证 */
-const shrinkWhileMoving = moving.filter(s => !s.g).length;
+   计算值会停在起点造成假失败; 缩放曲线本身由 scaleanim 模式(手动推时钟)单独验证。
+   "提前收"是预期行为: 只把离目标还远 (>16px) 时的缩回当违规 */
+const shrinkWhileMoving = moving.filter(s => !s.g && Math.abs(s.c - c2rel) > 16).length;
+/* 缩小提前于静止: 飞行中第一次摘掉 grabbed 后, 位置仍移动了 >2px → 缩回起跑早于落定 */
+let shrinkEarly = false;
+const firstRel = S.findIndex((s, i) => i > 0 && S[i - 1].g === 1 && s.g === 0);
+if (firstRel >= 0) {
+  const after = S.slice(firstRel + 1);
+  shrinkEarly = after.some((s, i) => Math.abs(s.c - (i ? after[i - 1].c : S[firstRel].c)) > 2);
+}
 const retargetOk = stable && ri >= 0 && shrinkWhileMoving === 0
   && Math.abs(last.c - c2rel) < 5 && landed === tab2 && last.sc > 0.99
+  && shrinkEarly
   && (P.expectRebound ? (rebound !== null && rebound > 3) : true);
+const dragOkEarly = dragOk && (P.mode === 'drag' ? shrinkEarly : true);
 
 return JSON.stringify({
-  ok: (P.mode === 'tap' ? tapOk : (P.mode === 'scaleanim' ? scaleOk : (P.mode === 'retarget' ? retargetOk : dragOk))),
+  ok: (P.mode === 'tap' ? tapOk : (P.mode === 'scaleanim' ? scaleOk : (P.mode === 'retarget' ? retargetOk : dragOkEarly))),
   stable, uniq, flash, flashAt, peak: +peak.toFixed(2), finalFrac,
   landed, under, grabbedSamples, grabbedAtEnd: ind.classList.contains('grabbed'),
   burstTarget, baseC: +baseC.toFixed(1), targetC: +targetC.toFixed(1), finalC: last.c,
   tapUniq, tapFinal, tapSteps,
   pressUniq, relUniq, pressPeak, pressEnd, shrinkMin, shrinkEnd, pressSteps, relSteps,
-  retargetIdx: ri, rebound, shrinkWhileMoving, movingSamples: moving.length, c2rel: c2rel === undefined ? null : +c2rel.toFixed(1),
+  retargetIdx: ri, rebound, shrinkWhileMoving, movingSamples: moving.length, shrinkEarly, firstRel,
+  c2rel: c2rel === undefined ? null : +c2rel.toFixed(1),
   geomStart, geomEnd: geom(),
   log: window.__navLog || [],
   samples: S.map(s => [s.t, s.c, s.g, s.tab, s.il, s.iw, s.tr, s.sc])

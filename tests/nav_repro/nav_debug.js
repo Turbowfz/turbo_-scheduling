@@ -102,6 +102,7 @@ window.addEventListener('load', () => {
   let prevT = 0, prevX = 0, lastT = 0, lastX = 0;   /* 速度采样: 倒数两次 move */
   let _suppressClick = false;   /* 拖动/飞行刚结束: 忽略紧随的 click (鼠标拖拽会额外触发一次) */
   let clickTab = null;          /* 点击滑行锁定的目标档 (null = 甩动飞行, 目标每帧取最近档) */
+  let shrinkStarted = false;    /* 本次飞行已提前触发缩回 (grabbed 已摘, endFlight 里不必再摘) */
 
   function cacheRects() {
     visNames = []; visRects = [];
@@ -223,6 +224,17 @@ window.addEventListener('load', () => {
         if (flTries < 10) dbg('F' + flTries + ' pos=' + sim.pos.toFixed(2) + ' vel=' + sim.vel.toFixed(0) + ' tgt=' + sim.target.toFixed(1) + ' tw=' + sim.targetW.toFixed(1) + ' k=' + k + ' c=' + c + ' dt=' + dt.toFixed(4) + ' wid=' + sim.wid.toFixed(1));
         render();
         flTries++;
+        /* 缩放提前收 (需求: "将要变为静止时开始缩小, 缩小完成时刚好静止"):
+           弹簧的包络按 e^(-c/2·t) 衰减, 用当前与目标的距离反推还要多久落定;
+           剩余时间 ≤ 缩放过渡时长 (.34s, 留 20ms 帧余量) 时就摘掉 grabbed 让 scale
+           开始缩回, 位置继续由弹簧收尾 —— 缩小走完, 滑块恰好静止 */
+        if (!shrinkStarted) {
+          const d = Math.abs(sim.pos - sim.target);
+          if (d > P.SETTLE_X && Math.log(d / P.SETTLE_X) / (c / 2) <= 0.36) {
+            shrinkStarted = true;
+            ind.classList.remove('grabbed');
+          }
+        }
         const settled = Math.abs(sim.vel) < P.SETTLE_V && Math.abs(sim.pos - sim.target) < P.SETTLE_X;
         if (settled || flTries > 240) { endFlight(); return; }
       } else { stopLoop(); return; }
@@ -268,7 +280,7 @@ window.addEventListener('load', () => {
 
   /* 释放入弹簧: 初速决定滑行距离 (无档位上限), 目标每帧跟随最近档, 边缘缓冲负责拦住 */
   function beginFlight(vpx) {
-    mode = 'flight'; flTries = 0;
+    mode = 'flight'; flTries = 0; shrinkStarted = false;
     sim.vel = vpx;                       /* px/s, 甩动力度直接进弹簧 */
     sim.over = 14;                       /* 边缘缓冲区: 最远冲出 14px */
     sim.min = visRects[0].left - tbLeft;
@@ -451,7 +463,7 @@ window.addEventListener('load', () => {
     ind.classList.add('grabbed');         /* 点下即放大; 到达落定前不再动大小 */
     clickTab = name;
     _indFrozen = true;                    /* 这段滑行由 JS 接管: switchTab 不许写位置/清过渡 */
-    mode = 'flight'; flTries = 0;
+    mode = 'flight'; flTries = 0; shrinkStarted = false;
     switchTab(name);                      /* 页面立即切换 (与旧行为一致) */
     startLoop(performance.now());
   }
@@ -460,6 +472,14 @@ window.addEventListener('load', () => {
     dbg('retarget ' + name + ' curPos=' + (sim ? sim.pos.toFixed(1) : '?') + ' vel=' + (sim ? sim.vel.toFixed(0) : '?'));
     clickTab = name;
     switchTab(name);
+    /* 缩放已提前收但新目标还很远: 重新放大, 收尾时序作废 (由新一段飞行重算) */
+    if (shrinkStarted && sim && visRects.length) {
+      const li = visNames.indexOf(name);
+      if (li >= 0 && Math.abs(sim.pos - (visRects[li].left - tbLeft)) > 24) {
+        shrinkStarted = false;
+        ind.classList.add('grabbed');
+      }
+    }
     if (!raf) { mode = 'flight'; startLoop(performance.now()); }   /* 保险: 循环必须在跑 */
   }
 
@@ -554,7 +574,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '110h-20261001';
+  window._webuiBuild = '112b-20261003';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */

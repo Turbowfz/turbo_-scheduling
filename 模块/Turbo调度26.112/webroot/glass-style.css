@@ -36,6 +36,8 @@ body{
   font-family:-apple-system,system-ui,sans-serif;
   font-size:1rem;line-height:1.5;
   -webkit-font-smoothing:antialiased;
+  /* 主题明暗切换: 背景/文字颜色非线性渐变, 不再瞬间跳变 */
+  transition:background-color .4s cubic-bezier(.4,0,.2,1),color .4s cubic-bezier(.4,0,.2,1);
 }
 
 #bg-layer{
@@ -48,6 +50,14 @@ body{
   transform:translateZ(0);
   transition:opacity .5s cubic-bezier(.4,0,.2,1);
 }
+/* 暗色模式的背景压暗: 亮色壁纸会从半透明卡片后面透出来, 文字压在亮图上看不清。
+   用 ::after 叠加黑色遮罩 (只暗色生效, 0→.6 平滑过渡), 不动用户自己调的"背景可见度"滑杆
+   (滑杆写的是元素本体的 opacity, 两者相乘互不干扰) */
+#bg-layer::after{
+  content:'';position:absolute;inset:0;background:#000;opacity:0;
+  transition:opacity .45s cubic-bezier(.4,0,.2,1);
+}
+[data-theme="dark"] #bg-layer::after{opacity:.6}
 
 
 .w{max-width:520px;margin:0 auto;padding:64px clamp(8px,3.08vw,16px) 100px;position:relative;z-index:1;will-change:scroll-position;}
@@ -86,7 +96,7 @@ body{
     inset 0 1px 0 rgba(255,255,255,.55),
     0 4px 16px rgba(0,0,0,.07),
     0 1px 4px rgba(0,0,0,.05);
-  transition:box-shadow .08s cubic-bezier(.4,0,.2,1);
+  transition:box-shadow .08s cubic-bezier(.4,0,.2,1),background-color .35s cubic-bezier(.4,0,.2,1),color .35s cubic-bezier(.4,0,.2,1);
   isolation:isolate;
 }
 
@@ -136,7 +146,7 @@ body{
 .ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .ct{font-size:var(--fs-xs);font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--ac);display:flex;align-items:center;gap:4px}
 .ct::before{content:'◈';font-size:var(--fs-xs);opacity:.4}
-.badge{font-size:var(--fs-xs);font-weight:700;padding:2px 8px;border-radius:var(--r-lg);letter-spacing:.3px;text-transform:uppercase;transition:all .22s}
+.badge{font-size:var(--fs-xs);font-weight:700;padding:2px 8px;border-radius:var(--r-lg);letter-spacing:.3px;text-transform:uppercase;transition:all .22s cubic-bezier(.4,0,.2,1)}
 .bof{background:rgba(255,255,255,.14);color:var(--tx3);border:1px solid rgba(255,255,255,.3)}
 
 .row{display:flex;gap:7px}
@@ -157,7 +167,7 @@ body{
     inset 0 1.5px 0 rgba(255,255,255,.70),
     inset 0 -1px 0 rgba(0,0,0,.05),
     0 4px 16px rgba(0,0,0,.10);
-  transition:transform .18s cubic-bezier(.34,1.56,.64,1),box-shadow .15s;
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1),box-shadow .18s cubic-bezier(.4,0,.2,1),background-color .3s cubic-bezier(.4,0,.2,1),color .3s cubic-bezier(.4,0,.2,1);
 }
 .btn::before{
   content:'';position:absolute;
@@ -166,7 +176,7 @@ body{
   background:linear-gradient(to bottom,rgba(255,255,255,.38),transparent);
   pointer-events:none;
 }
-.btn::after{content:'';position:absolute;inset:0;background:rgba(0,0,0,.06);opacity:0;border-radius:inherit;pointer-events:none;transition:opacity .1s}
+.btn::after{content:'';position:absolute;inset:0;background:rgba(0,0,0,.06);opacity:0;border-radius:inherit;pointer-events:none;transition:opacity .12s cubic-bezier(.4,0,.2,1)}
 .btn:active{transform:scale(.93)!important}
 .btn:active::after{opacity:1}
 .btn.pop{animation:pop .26s cubic-bezier(.34,1.7,.64,1)}
@@ -219,7 +229,12 @@ body{
   display:none;
   contain:layout style;
 }
-.page.active{display:block}
+/* 页面切换入场: 切到哪页哪页淡入上滑 (display 切换会重新触发动画) */
+@keyframes page-in{
+  0%  {opacity:0;transform:translateY(12px) scale(.992)}
+  100%{opacity:1;transform:translateY(0)   scale(1)}
+}
+.page.active{display:block;animation:page-in .34s cubic-bezier(.3,1.25,.4,1) both}
 
 .tabbar-wrap{
   position:fixed;bottom:0;left:0;right:0;z-index:200;
@@ -249,7 +264,7 @@ body{
     0 3px 10px rgba(0,0,0,.08);
   width:min(84vw,380px);
   transform:translateZ(0);
-  transition:transform .24s cubic-bezier(.34,1.56,.64,1);
+  transition:transform .24s cubic-bezier(.34,1.56,.64,1),background-color .35s cubic-bezier(.4,0,.2,1),border-color .35s cubic-bezier(.4,0,.2,1),box-shadow .35s cubic-bezier(.4,0,.2,1);
   will-change:transform;
   contain:layout style;
 }
@@ -305,14 +320,14 @@ body{
 .tab:active{opacity:.55}
 .tab-icon{
   font-size:var(--fs-lg);line-height:1;
-  transition:transform .35s cubic-bezier(.34,1.56,.64,1),opacity .2s;
+  transition:transform .35s cubic-bezier(.34,1.56,.64,1),opacity .25s cubic-bezier(.4,0,.2,1);
   opacity:.45;
 }
 .tab.active .tab-icon{transform:scale(1.2);opacity:1}
 .tab-label{
   font-size:var(--fs-xs);font-weight:700;letter-spacing:.1px;
   color:rgba(40,48,65,.55);
-  transition:color .22s,transform .3s cubic-bezier(.34,1.56,.64,1);
+  transition:color .25s cubic-bezier(.4,0,.2,1),transform .3s cubic-bezier(.34,1.56,.64,1);
   white-space:nowrap;
 }
 .tab.active .tab-label{color:rgba(10,14,28,.85);transform:scale(1.22)}
@@ -324,7 +339,8 @@ body{
   box-shadow:0 0 6px color-mix(in srgb,var(--ok) 80%,transparent);
   display:none;z-index:2;
 }
-.tab-dot.visible{display:block}
+.tab-dot.visible{display:block;animation:dot-pop .32s cubic-bezier(.34,1.56,.64,1)}
+@keyframes dot-pop{0%{transform:scale(0)}65%{transform:scale(1.6)}100%{transform:scale(1)}}
 .tabbar.in{animation:tabbar-in .45s cubic-bezier(.34,1.32,.64,1) .18s both;pointer-events:auto}
 
 .st-hero{
@@ -439,7 +455,7 @@ body{
 }
 
 /* ── Turbo 附加组件 ── */
-.inp{width:100%;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.5);border-radius:var(--r-sm);padding:10px 12px;font-size:var(--fs-sm);font-family:'SF Mono',Menlo,monospace;color:var(--tx);outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 2px 8px rgba(0,0,0,.06)}
+.inp{width:100%;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.5);border-radius:var(--r-sm);padding:10px 12px;font-size:var(--fs-sm);font-family:'SF Mono',Menlo,monospace;color:var(--tx);outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 2px 8px rgba(0,0,0,.06);transition:background-color .25s cubic-bezier(.4,0,.2,1),border-color .25s cubic-bezier(.4,0,.2,1),box-shadow .25s cubic-bezier(.4,0,.2,1)}
 .inp:focus{box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 0 0 3px rgba(140,170,255,.10);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 0 0 3px color-mix(in srgb,var(--ac) 10%,transparent)}
 .inp::placeholder{color:var(--tx3)}
 .search-wrap{position:relative;margin-bottom:10px}
@@ -466,13 +482,15 @@ body{
 .donate-item{display:flex;flex-direction:column;align-items:center;gap:6px}
 .donate-item img{width:100%;border-radius:var(--r-md);background:#fff;display:block}
 .donate-item .dl{font-size:var(--fs-xs);font-weight:700;color:var(--tx2);letter-spacing:.3px}
-#theme-btn{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.20);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);cursor:pointer;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.45);transition:transform .2s cubic-bezier(.34,1.56,.64,1)}
+#theme-btn{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.20);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);cursor:pointer;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.45);transition:transform .2s cubic-bezier(.34,1.56,.64,1),background-color .3s cubic-bezier(.4,0,.2,1),border-color .3s cubic-bezier(.4,0,.2,1)}
 #theme-btn:active{transform:scale(.85)}
 
 /* ── 暗色模式 ── */
 [data-theme="dark"]{
   --bg:#000000;
-  --tx:#e5e5e7;--tx2:#98989d;--tx3:#636366;
+  /* tx2/tx3 提亮: 暗色下旧值 (#98989d/#636366) 压在深色卡片上对比度不足,
+     按钮文字/表单说明/状态值/占位符全用这两个变量 —— 是"暗色字看不清"的主因 */
+  --tx:#e5e5e7;--tx2:#c4c4cc;--tx3:#95959d;
   --ac:#f5f5f7;
   --rdyn:rgba(255,255,255,.16);
   --sl-fill:rgba(255,255,255,.38);
@@ -491,8 +509,10 @@ body{
 [data-theme="dark"] .st-mini-val,[data-theme="dark"] .st-mini-val-sm{color:#e5e5e7}
 [data-theme="dark"] .tabbar{background:rgba(40,40,46,.60),rgba(0,0,0,.40);border:1px solid rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.20),inset 0 -0.5px 0 rgba(0,0,0,.4),0 12px 40px rgba(0,0,0,.5)}
 [data-theme="dark"] .tab-indicator{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.14)}
-[data-theme="dark"] .tab-label{color:rgba(200,200,210,.5)}
+[data-theme="dark"] .tab-label{color:rgba(216,221,232,.78)}
+[data-theme="dark"] .tab-icon{opacity:.62}
 [data-theme="dark"] .tab.active .tab-label{color:#f5f5f7}
+[data-theme="dark"] .badge.bof{background:rgba(255,255,255,.10);color:rgba(208,214,228,.8);border-color:rgba(255,255,255,.22)}
 [data-theme="dark"] .info-switch-pill{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.20)}
 [data-theme="dark"] .tog .tk{background:rgba(120,140,160,.30);border:1px solid rgba(255,255,255,.20)}
 [data-theme="dark"] .si-row{border-color:rgba(255,255,255,.08)}
@@ -501,10 +521,10 @@ body{
 [data-theme="dark"] .clear-btn{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.20)}
 [data-theme="dark"] #theme-btn{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25)}
 /* ── 云控: 液态分段按钮 + 基础表单 ── */
-.cseg-btn{flex:1;padding:10px 8px;border:none;border-radius:12px;cursor:pointer;background:rgba(255,255,255,.14);color:var(--tx3);font-size:var(--fs-sm);font-weight:700;letter-spacing:.2px;backdrop-filter:blur(var(--blur)) saturate(160%);-webkit-backdrop-filter:blur(var(--blur)) saturate(160%);border:1px solid rgba(255,255,255,.20);transition:background .25s,color .25s,box-shadow .25s,transform .2s cubic-bezier(.34,1.5,.64,1);-webkit-tap-highlight-color:transparent}
+.cseg-btn{flex:1;padding:10px 8px;border:none;border-radius:12px;cursor:pointer;background:rgba(255,255,255,.14);color:var(--tx3);font-size:var(--fs-sm);font-weight:700;letter-spacing:.2px;backdrop-filter:blur(var(--blur)) saturate(160%);-webkit-backdrop-filter:blur(var(--blur)) saturate(160%);border:1px solid rgba(255,255,255,.20);transition:background .25s cubic-bezier(.4,0,.2,1),color .25s cubic-bezier(.4,0,.2,1),box-shadow .25s cubic-bezier(.4,0,.2,1),transform .2s cubic-bezier(.34,1.5,.64,1);-webkit-tap-highlight-color:transparent}
 .cseg-btn:active{transform:scale(.97)}
 .cseg-btn.active{background:rgba(255,255,255,.34);color:var(--tx);border-color:rgba(255,255,255,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 3px 12px rgba(0,0,0,.10)}
-[data-theme="dark"] .cseg-btn{background:rgba(255,255,255,.08);color:rgba(200,200,210,.6);border-color:rgba(255,255,255,.14)}
+[data-theme="dark"] .cseg-btn{background:rgba(255,255,255,.08);color:rgba(212,218,232,.8);border-color:rgba(255,255,255,.14)}
 [data-theme="dark"] .cseg-btn.active{background:rgba(255,255,255,.22);color:#f5f5f7;border-color:rgba(255,255,255,.30)}
 .cf-sec{margin:12px 0 8px;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);font-size:var(--fs-xs);font-weight:700;color:var(--ac);letter-spacing:.4px;display:flex;align-items:center;gap:8px}
 [data-theme="dark"] .cf-sec{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.12)}
@@ -532,6 +552,18 @@ body{
 .cf-name{font-size:var(--fs-xs);color:var(--tx2);margin-left:5px}
 .cf-q{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:5px;border-radius:50%;background:rgba(120,140,255,.22);color:var(--ac);font-size:10px;font-weight:700;cursor:pointer;flex:none}
 .cf-tiprow{display:none;padding:2px 0 8px 2px}
-.cf-tiprow.open{display:block}
+/* 注释展开/折叠组内容入场: 淡入+轻微下滑 (非线性) */
+@keyframes fade-slide-in{
+  0%  {opacity:0;transform:translateY(-4px)}
+  100%{opacity:1;transform:translateY(0)}
+}
+.cf-tiprow.open{display:block;animation:fade-slide-in .22s cubic-bezier(.3,1.2,.4,1)}
+.cf-gp[open] .cf-gp-body{animation:fade-slide-in .26s cubic-bezier(.3,1.25,.4,1)}
 .cf-tip{font-size:var(--fs-xs);color:var(--tx2);line-height:1.6;background:rgba(120,140,255,.10);border-left:3px solid var(--ac);border-radius:6px;padding:7px 10px}
 [data-theme="dark"] .cf-tip{background:rgba(120,140,255,.08)}
+
+/* ── 主题切换平滑过渡: 这些表面自身没有 transition, 明暗切换时会瞬间跳变 ── */
+.ttl{transition:color .4s cubic-bezier(.4,0,.2,1)}
+.list-item,.empty-tip,.st-mini,.cf-sec,.cf-gp,.log-area,.cf-tip,.info-switch-pill{
+  transition:background-color .35s cubic-bezier(.4,0,.2,1),border-color .35s cubic-bezier(.4,0,.2,1),color .35s cubic-bezier(.4,0,.2,1);
+}
