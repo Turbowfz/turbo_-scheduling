@@ -22,7 +22,7 @@ const FI = {
   tl: { k: 'tl', n: '中核频率下限', t: '中核(5-6)保底档: 中核是主力核, 抬底频对稳定感最明显. -1=自动 (共32档 0~31)' },
   th: { k: 'th', n: '中核频率上限', t: '中核(5-6)封顶档: 中核一般跑系统杂活, 压低它不影响游戏主体' },
   core: { k: 'core', n: '核心参与表', t: '逗号 8 值对应 8 颗核: 1=这颗核允许参与关键任务调度, -1=不限制/默认 (解析默认全 -1)' },
-  chtbEnable: { k: 'chtb enable', n: '提频总闸 (默认开)', t: 'Critical & Heavy Task Boost 总闸: 给游戏的关键线程与重负载线程单独拉频率, 配套数值在 game_config 里 (cht_boost_max/min、ctn、ctep). 本档位跑到的帧率才生效, 所以每个帧率档位都要开. 默认开启 —— 配置里没写这个键时按 true 处理, 保存会写入 chtb:{enable:true}; 只有显式设了 enable:false 才是关' },
+  chtbEnable: { k: 'chtb enable', n: '提频总闸 (跟随game_config)', t: 'Critical & Heavy Task Boost 总闸: 给游戏的关键线程与重负载线程单独拉频率, 配套数值在 game_config 里 (cht_boost_max/min、ctn、ctep). 本档位跑到的帧率才生效, 所以每个帧率档位都要开. 跟随 game_config: 添加 game_config 时会自动给每个帧率档位补上 chtb:{enable:true}; 配置里显式写了 enable:false 才是关' },
   /* ── gpa_config.es4g 关键线程隔离 (给游戏最要命的几个线程圈专属包厢) ── */
   es4gState: { k: 'es4g state', n: '蜂鸟总开关', t: 'true=进游戏启用关键线程隔离, 本块其它设置随之生效' },
   es4gIsolate: { k: 'es4g isolate', n: '隔离核表', t: '10 进制掩码, 第 N 位=CPU N, 如 144=0b10010000=CPU4+CPU7. 最多 3 个值, 强度递增: ①核上有任务也照抢 ②高优先任务来抢时才隔离 ③绝对隔离(闲着也不给别人)' },
@@ -79,12 +79,14 @@ function fieldCheck(key, id, checked) {
 function gv(obj, path) {
   return path.split('.').reduce((o, k) => (o && o[k] !== undefined ? o[k] : null), obj);
 }
-/* chtb (关键/重负载提频总闸) 默认开: 没写这个键就按 true 显示 —— 开关默认勾选,
-   保存时会写回 chtb:{enable:true}; 只有配置里显式写了 enable:false 才显示为关闭 */
+/* chtb (关键/重负载提频总闸) 跟随 game_config: 配置里有 game_config 时显示为开
+   (添加 game_config 时已自动给各档位补 chtb:{enable:true}), 没有则显示为关;
+   档位里显式写的 enable 值优先。不采用"没写键=默认开" —— chtb 只在 game_config
+   存在时才应该被启用 */
 function chtbOn(g) {
   const c = g && typeof g === 'object' ? g.chtb : null;
   if (c && typeof c === 'object' && c.enable !== undefined) return !!c.enable;
-  return true;
+  return _baseObj && _baseObj.game_config && typeof _baseObj.game_config === 'object' && Object.keys(_baseObj.game_config).length > 0;
 }
 function sv(root, path, val) {
   const keys = path.split('.'); let cur = root; for (let i = 0; i < keys.length - 1; i++) {
@@ -195,6 +197,10 @@ function renderBaseForm() {
   }
 
   form.innerHTML = html;
+  /* 记录渲染时每个开关的初始状态: chtb 的收集逻辑用它判断"用户是否真的动过开关"
+     (没动过就不落盘 —— chtb 跟随 game_config, 不给没加 game_config 的配置写 chtb) */
+  window._boxInit = {};
+  document.querySelectorAll('#cf-base-form input[type="checkbox"][id]').forEach(el => { window._boxInit[el.id] = el.checked; });
 }
 
 /* 表单 id → 对象路径 (gpa./tf./cpu./gz. 前缀映射到真实区块名; 其余原样) */
@@ -211,11 +217,14 @@ function collectBaseForm() {
   if (!_baseObj) return null; const obj = _baseObj; document.querySelectorAll('#cf-base-form input[id]').forEach(el => {
     const id = el.id; const isGpa = id.startsWith('gpa.'), isTf = id.startsWith('tf.'), isFs = id.startsWith('fps_stabilizer.'); const isCpu = id.startsWith('cpu.'), isGz = id.startsWith('gz.'), isGc = id.startsWith('game_config.'); if (!isGpa && !isTf && !isFs && !isCpu && !isGz && !isGc) return; if (el.tagName === 'TEXTAREA') return; /* JSON 域在下方 textarea 统一处理 */
     const existed = _baseExisted.has(id) || (isFs && gv(obj, id) !== null); const orig = _baseOrig[id]; let val; if (el.type === 'checkbox') {
-      /* chtb 总闸默认开: 未勾选 = 用户显式选择关闭, 必须写出 enable:false ——
-         若沿用"未勾选且原本没有就不新增"的通用规则, 取消勾选会被静默忽略 (关不掉) */
+      /* chtb 总闸跟随 game_config: 开关与渲染时相比有变化才落盘 ——
+         没动过就不写 (没加 game_config 的配置不写 chtb; 加了且自动补齐过的档位键已在)。
+         勾选 → enable:true; 取消 → enable:false (显式关, 否则会被静默忽略成"跟随默认") */
       if (el.id.endsWith('chtb.enable')) {
-        if (!el.checked) { sv(obj, realIdPath(el.id), false); return; }
-        val = true;
+        const was = window._boxInit ? !!window._boxInit[el.id] : el.checked;
+        if (el.checked === was) return;
+        sv(obj, realIdPath(el.id), el.checked);
+        return;
       } else {
         if (!el.checked && !existed) return; /* 未勾选且原本没有 → 不新增 */
         val = el.checked;
