@@ -1,19 +1,20 @@
 # Turbo 调度
 
-一加 / OPPO 骁龙机型的内核调度模块 (KernelSU / Magisk),用二改配置替换 Scene 调度,并把官方风驰云控配置注入应用增强服务 (COSA) 数据库。
+骁龙 8 Gen3 / 8 Elite / 8 Gen5 / 8 Elite Gen5 机型的内核调度模块 (KernelSU / Magisk / APatch),**不限品牌**:用二改配置替换 Scene 调度;云控注入 (把官方风驰云控配置注入应用增强服务 COSA 数据库) 面向**欧加真 (OPPO / 一加 / 真我)** 等带风驰内核与 COSA 的机型。
 
 > 仅供个人玩机使用。刷机有风险,后果自负。
 
 ## 功能
 
 - **二改 Scene 调度**(不限品牌):替换 Scene9 的调度配置(oplus 版仅管日用、通用版日用+游戏全接管),重启后自动切回二改配置;机型目录缺少 oplus 配置时自动降级通用版并提示
-- **云控注入**(风驰机型):把官方风驰云控配置(按游戏包名)注入应用增强服务 COSA 数据库,支持渠道服自动映射、开机自动匹配注入,**只注入手机上已安装的游戏**;WebUI 可视化编辑五大配置块(cpu_config / gpa_config / game_zone / thermal_frame / fps_stabilizer),注入=写数据库、保存=写模块 cccf;数据库配置可一键导出为 cccf 文件
+- **云控注入**(欧加真机型):把官方风驰云控配置(按游戏包名)注入应用增强服务 COSA 数据库,支持渠道服自动映射、开机自动匹配注入,**只注入手机上已安装的游戏**;WebUI 可视化编辑五大配置块(cpu_config / gpa_config / game_zone / thermal_frame / fps_stabilizer),注入=写数据库、保存=写模块 cccf;数据库配置可一键导出为 cccf 文件
 - **短视频包名**:自定义短视频场景的调度参数,WebUI 内管理
 - **WebUI**:KsuWebUI 载入,提供状态页 / 短视频管理 / 云控编辑(UI 版表单 + 文本版 JSON)/ 设置
 
 ## 支持机型
 
-骁龙 8Gen3 / 8Elite / 8Gen5 / 8EliteGen5 的一加与 OPPO 机型;云控注入额外要求带风驰内核(调速器含 scx/hmbird)与 COSA,与通用版二改调度互斥。
+- **二改 Scene 调度**:骁龙 8Gen3 / 8Elite / 8Gen5 / 8EliteGen5 机型,**不限品牌** (Scene 是什么品牌的设备都能跑;机型目录缺少 oplus 配置时自动降级通用版)
+- **云控注入**:面向带风驰内核 (调速器含 scx/hmbird) 与 COSA 的机型,目前为**欧加真 (OPPO / 一加 / 真我)** 系;与通用版二改调度互斥 (选通用版即无云控)
 
 ## 安装
 
@@ -38,7 +39,17 @@
 node release.js
 ```
 
-然后 `git add -A && git commit -m "vX" && git tag vX && git push --tags && git push` 即可。
+然后提交并推送到**两个远端**(Gitee 与 GitHub 内容保持一致):
+
+```bash
+git add -A && git commit -m "vX"
+git tag vX
+git push origin master && git push origin --tags     # Gitee
+git push github master:main && git push github --tags # GitHub (默认分支为 main)
+```
+
+远端说明:`origin` = Gitee (`gitee.com/turbowfz/turbo_-scheduling`, 默认分支 master),`github` = GitHub (`github.com/Turbowfz/turbo_-scheduling`, 默认分支 main)。
+模块云更新的 `updateJson` 指向 Gitee,因此**更新包必须推到 Gitee 才会被管理器看到**;GitHub 作为镜像仓库同步同一份内容。
 
 首次绑定仓库 (本仓库已完成):
 
