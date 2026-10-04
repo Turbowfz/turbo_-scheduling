@@ -94,6 +94,26 @@ if (!noBuild) {
   console.log('(跳过打包, 沿用已存在的 ' + zipName + ')');
 }
 
+/* 1b) 桌面副本 (user 2026-10-05: "以后都要自动打包到桌面, 且只有 1 个文件"):
+   打包后把 zip 复制一份到用户桌面, 并清掉桌面上旧的 Turbo调度*.zip —— 桌面永远只留
+   最新这一个安装包; 其它项目的 zip (如 Xpan*) 不是本模块的, 一律不动 */
+const DESKTOP = path.join(process.env.USERPROFILE || ROOT, 'Desktop');
+try {
+  if (!fs.existsSync(DESKTOP)) {
+    console.log('! 未找到桌面目录, 跳过桌面副本: ' + DESKTOP);
+  } else {
+    for (const f of fs.readdirSync(DESKTOP)) {
+      if (/^Turbo调度.+\.zip$/.test(f) && f !== zipName) {
+        try { fs.unlinkSync(path.join(DESKTOP, f)); console.log('已清桌面旧包: ' + f); } catch (_) {}
+      }
+    }
+    fs.copyFileSync(zipPath, path.join(DESKTOP, zipName));
+    console.log('已放桌面: ' + path.join(DESKTOP, zipName) + '  (桌面只保留这 1 个)');
+  }
+} catch (e) {
+  console.log('! 桌面副本失败 (不影响发布): ' + e.message);
+}
+
 /* 2) changelog.md */
 const changelog = latestChangelog(path.join(modDir, 'Update.md'));
 fs.writeFileSync(path.join(ROOT, 'changelog.md'), changelog, 'utf8');
