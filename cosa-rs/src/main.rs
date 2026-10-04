@@ -9,14 +9,18 @@
 //    cosa write <包名> <json文件>             写单行 (from_server=0 + 清服务器同名行 + 保护 + WAL)
 //    cosa delete <包名>                       删行
 //    cosa sync [cccf目录]                     全量: 目录内 *.json → 数据库 (开机注入/手动注入共用)
+//    cosa enc [cccf目录]                      解密目录内 *.enc 云控包并注入 (自研替代闭源 bin/inject;
+//                                             跳过已有同名 .json 的包; 注入即 from_server=0 + 保护)
 //    cosa localize <cccf目录>                 兜底注入后用: 把 *.enc 对应的行标回 from_server=0 并重新武装保护
 //    cosa protect | unprotect                 三联保护开关
 //    cosa diag                               诊断: 触发器现状 + 本地/服务器行数 + 注入拦截自检
 //    cosa version                            版本 (同时可用来验证 SQLite 库能否加载)
 //  设计: rusqlite 直连 (零 shell/零命令行 SQL); 参数化绑定; UPDATE/INSERT 二选一;
-//        WAL checkpoint 收尾; enc 配置不支持 (由 bin/inject 兜底, 注入后 localize 收尾)。
+//        WAL checkpoint 收尾; enc 解密为自研纯 Rust 实现 (见 enc.rs, 算法经逆向+实机逐字节验证)。
 //  from_server 语义: 0=本地(模块注入, 受保护), !=0=服务器下发(一律不许进库)。
 // ═══════════════════════════════════════════════
+
+mod enc;
 
 use anyhow::{bail, Context, Result};
 use rusqlite::Connection;
@@ -638,6 +642,134 @@ fn cmd_delete(pkg: &str) -> Result<()> {
     Ok(())
 }
 
+/* COSA 应用版本号 (pm dump 抓 versionName), 拿不到就空串 (不强改字段) */
+fn cosa_app_version() -> String {
+    if let Ok(out) = std::process::Command::new("pm")
+        .args(["dump", "com.oplus.cosa"])
+        .output()
+    {
+        let s = String::from_utf8_lossy(&out.stdout);
+        for line in s.lines() {
+            let t = line.trim();
+            if let Some(v) = t.strip_prefix("versionName=") {
+                return v.trim().to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+/* 机型代号 (ro.boot.prjname), 拿不到就空串 */
+fn prjname() -> String {
+    if let Ok(out) = std::process::Command::new("getprop")
+        .arg("ro.boot.prjname")
+        .output()
+    {
+        return String::from_utf8_lossy(&out.stdout).trim().to_string();
+    }
+    String::new()
+}
+
+/// enc [目录]: 解密 *.enc 云控包并注入 (自研, 替代闭源 bin/inject)
+/// 只处理没有同名 .json 的包 (json 优先); 与 sync 相同的过滤/写库/保护/WAL 路径。
+/// 字段覆写与闭源注入器对齐 (实机抓 SQL 比对): cosa_version←COSA 版本,
+/// other←机型代号+后缀, created_at/modified_at←NULL, from_server←0。
+fn cmd_enc(dir: Option<&str>) -> Result<()> {
+    let dir = dir.unwrap_or(DEFAULT_CCCF);
+    let cccf = Path::new(dir);
+    if !cccf.is_dir() { bail!("cccf 目录不存在: {}", dir); }
+
+    /* 收集 .enc (json 优先: 有同名 .json 的跳过) */
+    let mut enc_list: Vec<(String, std::path::PathBuf)> = Vec::new();
+    for entry in fs::read_dir(cccf).context("无法读取目录")? {
+        let path = entry?.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("enc") { continue; }
+        let pkg = path.file_stem().unwrap().to_string_lossy().to_string();
+        if cccf.join(format!("{}.json", pkg)).exists() {
+            outln!("跳过 {} (已有同名 .json)", pkg);
+            continue;
+        }
+        enc_list.push((pkg, path));
+    }
+    if enc_list.is_empty() {
+        outln!("目录内没有待注入的 .enc (或全部已有 .json 覆盖)");
+        return Ok(());
+    }
+
+    /* 只注入已安装的游戏 (与 sync 同规则) */
+    match installed_pkgs() {
+        Some(list) => {
+            let before = enc_list.len();
+            enc_list.retain(|(pkg, _)| list.iter().any(|p| p == &pkg.to_ascii_lowercase()));
+            let skipped = before - enc_list.len();
+            if skipped > 0 {
+                outln!("跳过未安装的游戏: {} 个", skipped);
+            }
+        }
+        None => errln!("警告: 无法获取已安装应用列表, 本次不按已安装性过滤"),
+    }
+    if enc_list.is_empty() {
+        bail!("所有 .enc 对应的游戏均未安装, 无可注入内容");
+    }
+
+    /* 解密 → 字段覆写 → 待注入列表 */
+    let app_ver = cosa_app_version();
+    let prj = prjname();
+    let mut json_data: Vec<(String, serde_json::Map<String, Value>)> = Vec::new();
+    let mut bad = 0;
+    for (pkg, path) in &enc_list {
+        let text = match fs::read(path) { Ok(t) => t, Err(e) => { bad += 1; errln!("FAIL: {} (读取失败: {})", pkg, e); continue } };
+        let cfg = match enc::decrypt_enc(&text, pkg) {
+            Ok(c) => c,
+            Err(e) => { bad += 1; errln!("FAIL: {} (解密失败: {})", pkg, e); continue }
+        };
+        let json: Value = match serde_json::from_slice(&cfg.json) {
+            Ok(v) => v,
+            Err(e) => { bad += 1; errln!("FAIL: {} (明文不是合法 JSON: {})", pkg, e); continue }
+        };
+        let mut obj = match json.as_object() {
+            Some(o) => o.clone(),
+            None => { bad += 1; errln!("FAIL: {} (明文顶层不是对象)", pkg); continue }
+        };
+        /* 字段覆写 (与闭源注入器行为对齐) */
+        if !app_ver.is_empty() {
+            obj.insert("cosa_version".into(), Value::String(app_ver.clone()));
+        }
+        if !prj.is_empty() {
+            /* other 前缀换成机型代号, 保留首个 '_' 之后的尾巴 (官方格式: 代号_标志&) */
+            let suffix = obj.get("other").and_then(|v| v.as_str()).map(|s| {
+                match s.find('_') { Some(i) => s[i..].to_string(), None => String::new() }
+            });
+            obj.insert("other".into(), Value::String(format!("{}{}", prj, suffix.unwrap_or_default())));
+        }
+        obj.insert("created_at".into(), Value::Null);
+        obj.insert("modified_at".into(), Value::Null);
+        obj.insert("from_server".into(), Value::String("0".into()));
+        json_data.push((pkg.clone(), obj));
+    }
+    if json_data.is_empty() { bail!("全部 .enc 解密失败 ({} 个)", bad); }
+
+    let dbs = db_paths();
+    if dbs.is_empty() { bail!("未找到数据库"); }
+
+    for db in &dbs {
+        outln!("处理数据库: {}", db);
+        let conn = open_db(db)?;
+        let ti = TableInfo::load(&conn)?;
+        for (pkg, obj) in &json_data {
+            match write_one(&conn, &ti, pkg, obj) {
+                Ok(()) => outln!("OK: {} (enc 解密注入)", pkg),
+                Err(e) => { errln!("FAIL: {} ({})", pkg, e); bad += 1; }
+            }
+        }
+        install_protection(&conn)?;
+        finish_db(db);
+    }
+    outln!("enc 注入完成. 共 {} 个, 失败 {}", json_data.len(), bad);
+    if bad > 0 && bad >= json_data.len() { bail!("全部失败"); }
+    Ok(())
+}
+
 fn cmd_protect() -> Result<()> {
     let dbs = db_paths();
     if dbs.is_empty() { bail!("未找到数据库"); }
@@ -848,7 +980,7 @@ fn cmd_diag() -> Result<()> {
 }
 
 fn usage() -> &'static str {
-    "用法: cosa check|list|list-cloud|read <包名> [输出文件]|read-cloud <包名>|write <包名> <json文件>|delete <包名>|sync [目录]|localize <目录>|protect|unprotect|diag|version"
+    "用法: cosa check|list|list-cloud|read <包名> [输出文件]|read-cloud <包名>|write <包名> <json文件>|delete <包名>|sync [目录]|enc [目录]|localize <目录>|protect|unprotect|diag|version"
 }
 
 fn main() -> std::process::ExitCode {
@@ -874,6 +1006,7 @@ fn main() -> std::process::ExitCode {
             _ => Err(anyhow::anyhow!(usage())),
         },
         Some("sync") => cmd_sync(args.get(2).map(String::as_str)),
+        Some("enc") => cmd_enc(args.get(2).map(String::as_str)),
         Some("localize") => match args.get(2) {
             Some(d) => cmd_localize(d),
             _ => Err(anyhow::anyhow!(usage())),

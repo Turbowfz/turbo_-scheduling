@@ -164,7 +164,6 @@ set_permissions() {
   [ -d "$MODPATH/scripts" ] && {
     set_perm_recursive "$MODPATH/scripts" 0 0 0755 0755
   }
-  [ -f "$MODPATH/bin/inject" ] && chmod 777 "$MODPATH/bin/inject" 2>/dev/null
   # cosa: COSA 数据库工具 (Rust 二进制), WebUI/脚本读写数据库的唯一通道
   [ -f "$MODPATH/bin/cosa" ] && chmod 755 "$MODPATH/bin/cosa" 2>/dev/null
 }

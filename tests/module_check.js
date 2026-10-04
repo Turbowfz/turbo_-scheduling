@@ -94,7 +94,7 @@ const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => {
 });
 const crlf = [];
 for (const p of walk(path.join(ROOT, MOD))) {
-  if (/\.(png|jpe?g|apk|so|zip)$/i.test(p) || /[\\/]bin[\\/](cosa|inject)$/.test(p)) continue;
+  if (/\.(png|jpe?g|apk|so|zip)$/i.test(p) || /[\\/]bin[\\/]cosa$/.test(p)) continue;
   const b = fs.readFileSync(p, 'latin1');
   const c = (b.match(/\r\n/g) || []).length;
   if (c > 0) crlf.push(path.relative(ROOT, p) + ' (' + c + ')');

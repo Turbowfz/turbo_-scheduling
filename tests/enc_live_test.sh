@@ -1,24 +1,18 @@
 #!/system/bin/sh
 # enc 路径真机实测 (需 root): 借一个已安装游戏的包名放入 .enc, 跑完整注入, 最后自动还原。
-# 用法 (设备上): sh enc_live_test.sh <测试用.enc 路径> [替代注入器路径]
-#   替代注入器 (可选的另一份注入器二进制) 会被临时装到模块 bin/inject, 结束时还原。
+# 用法 (设备上): sh enc_live_test.sh <测试用.enc 路径>
+#   注入走 cosa enc (自研解密), 不再需要外部注入器二进制。
 # 全程自动还原: 备份受影响的行、还原 json、删除测试产生的行。
 M=/data/adb/modules/Turbo_Scheduling
 T=/data/local/tmp/enc_test
 ENC_SRC="$1"
-ALT_INJECT="$2"
 PKG=com.tencent.tmgp.sgame
 C() { LD_LIBRARY_PATH=$M/bin "$M/bin/cosa" "$@"; }
 
-[ -f "$ENC_SRC" ] || { echo "用法: $0 <测试用.enc> [替代注入器]"; exit 1; }
+[ -f "$ENC_SRC" ] || { echo "用法: $0 <测试用.enc>"; exit 1; }
 rm -rf $T; mkdir -p $T
 echo "--- 0) 基线 ---"
 C list > $T/before.txt 2>&1; echo "  包数: $(wc -l < $T/before.txt)"
-
-if [ -n "$ALT_INJECT" ] && [ -f "$ALT_INJECT" ]; then
-  cp -f $M/bin/inject $T/inject.bak && cp -f "$ALT_INJECT" $M/bin/inject && chmod 755 $M/bin/inject
-  echo "  已临时替换注入器: $(md5sum $M/bin/inject | awk '{print $1}')"
-fi
 
 echo "--- 1) 备份 $PKG 的行 + 移走同名 json + 放入 .enc ---"
 C read $PKG > $T/$PKG.bak.json 2>&1 && echo "  已备份 ($(wc -c < $T/$PKG.bak.json) 字节)"
@@ -26,7 +20,7 @@ mv $M/cccf/$PKG.json $T/ && echo "  同名 json 已移走"
 cp "$ENC_SRC" $M/cccf/$PKG.enc && echo "  .enc 已放入 ($(stat -c%s $M/cccf/$PKG.enc) 字节)"
 
 echo "--- 2) 跑完整注入 ---"
-sh $M/scripts/cloud_ctrl.sh inject 2>&1 | sed -n '/注入 .enc/,/保护已重新武装/p'
+sh $M/scripts/cloud_ctrl.sh inject 2>&1 | sed -n '/注入 .enc/,/enc 注入完成/p'
 
 echo "--- 3) 结果 ---"
 C list > $T/after.txt 2>&1
@@ -44,10 +38,6 @@ if [ -s $T/$PKG.bak.json ] && [ "$(wc -c < $T/$PKG.bak.json)" = "$(wc -c < $T/no
   echo "  $PKG 行已恢复到注入前大小 ($(wc -c < $T/now.json) 字节)"
 else
   echo "  注意: $PKG 行大小 备份=$(wc -c < $T/$PKG.bak.json) 现在=$(wc -c < $T/now.json)"
-fi
-if [ -f $T/inject.bak ]; then
-  cp -f $T/inject.bak $M/bin/inject && chmod 755 $M/bin/inject
-  echo "  注入器已还原: $(md5sum $M/bin/inject | awk '{print $1}')"
 fi
 echo "--- 5) 最终 ---"
 C diag 2>&1 | tail -3

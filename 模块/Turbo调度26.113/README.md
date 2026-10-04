@@ -6,7 +6,7 @@
 ## 功能
 
 - **二改 Scene 调度**(不限品牌):替换 Scene9 的调度配置(oplus 版仅管日用、通用版日用+游戏全接管),重启后自动切回二改配置;机型目录缺少 oplus 配置时自动降级通用版并提示
-- **云控注入**(欧加真机型):把官方风驰云控配置(按游戏包名)注入应用增强服务 COSA 数据库,支持渠道服自动映射、开机自动匹配注入(只注入手机上已安装的游戏);WebUI 可视化编辑五大配置块(cpu_config / gpa_config / game_zone / thermal_frame / fps_stabilizer),注入=写数据库、保存=写模块 cccf;数据库配置可一键导出为 cccf 文件
+- **云控注入**(欧加真机型):把官方风驰云控配置(按游戏包名)注入应用增强服务 COSA 数据库,支持渠道服自动映射、开机自动匹配注入(只注入手机上已安装的游戏);WebUI 可视化编辑五大配置块(cpu_config / gpa_config / game_zone / thermal_frame / fps_stabilizer),注入=写数据库、保存=写模块 cccf;数据库配置可一键导出为 cccf 文件;官方下发的加密云控包(.enc)由模块内置工具直接解密注入(无需额外组件)
 - **短视频包名**:自定义短视频场景的调度参数,WebUI 内管理
 
 ## 安装要求
@@ -29,11 +29,11 @@
 ├── scripts/
 │   ├── common.sh         公共函数库(按键/日志/SoC判定/官方调度开关)
 │   ├── scene_config.sh   Scene 配置部署与还原
-│   ├── cloud_ctrl.sh     云控注入流程(json→cosa sync, enc→inject)
+│   ├── cloud_ctrl.sh     云控注入流程(json→cosa sync, enc→cosa enc)
 │   ├── pkg_matcher.sh    游戏包名匹配 + 渠道服映射
 │   ├── asoul_install.sh  AsoulOpt 云端安装(直连上游 release, 同版本跳过)
 │   └── whitelist.conf    渠道服白名单映射(用户可编辑)
-├── bin/                  cosa(COSA 数据库工具, Rust) + inject(enc 解密注入); SQLite 用系统库(安装时自动建链接)
+├── bin/                  cosa(COSA 数据库工具 + enc 解密, Rust); SQLite 用系统库(安装时自动建链接)
 ├── <SoC目录>/             各平台 scene 配置与云控模板(8gen3/8elite/8gen5/8elitegen5)
 └── webroot/              WebUI(用 KernelSU 管理器的模块 WebUI 打开)
     ├── core.js           公共层:路径常量 / root exec / 写入校验
