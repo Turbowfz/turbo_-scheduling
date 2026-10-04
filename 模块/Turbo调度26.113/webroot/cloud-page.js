@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!_baseObj.cpu_config) _baseObj.cpu_config = {}; if (_baseObj.cpu_config[s]) { cloudLog('场景 ' + s + ' 已存在', 'warning'); return; }
         _baseObj.cpu_config[s] = { time: 0 }; renderBaseForm(); cloudLog('已添加场景 ' + s + ' (填好 boost/time 后点"保存"写入 cccf)', 'success'); return; }
 
-      /* 添加 game_config: 建官方格式骨架 (只可编辑 cht_boost_max/cht_boost_min/ctn) */
+      /* 添加 game_config: 建官方格式骨架 (可编辑 cht_boost_max/cht_boost_min/ctn/ctep; ctb/htb 固定 1) */
       if (t.hasAttribute('data-gc-add')) {
         if (!_baseObj) return; try { collectBaseForm(); }
         catch (e) { cloudLog('存在未保存的非法JSON, 修正后再添加: ' + e.message, 'error'); return; }
