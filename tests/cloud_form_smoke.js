@@ -1,6 +1,6 @@
 /* cloud-form.js 表单逻辑冒烟 (纯 node, 无需真机/浏览器):
    覆盖 26.113b 轮: gpa mtl/sync 可编辑渲染与收集 / core 撤编辑原样保留 /
-   game_config ctb·htb 固定 1 (无开关) / fps_stabilizer.temp 载入即归一 500 且只读
+   game_config ctb·htb 固定 1 (无开关) / fps_stabilizer.temp 只抬不压 (clampFsTemp, 与 from_server 同批)
    用法: node tests/cloud_form_smoke.js */
 const fs = require('fs');
 const path = require('path');
@@ -27,7 +27,7 @@ global.document = {
 };
 /* eval 内 const 不外泄 → 末尾用表达式把需要的引用带出来 (函数声明会泄漏到本作用域,
    故接收对象须用别的名字, 避免与泄漏的 renderBaseForm 等撞名) */
-const api = eval(src + ';({ FI, renderBaseForm, collectBaseForm })');
+const api = eval(src + ';({ FI, renderBaseForm, collectBaseForm, clampFsTemp })');
 
 /* ── 1) 渲染: 分档形态 ── */
 window._baseObj = {
@@ -47,8 +47,8 @@ assert(!html.includes('id="gpa.60.core"'), '不再渲染 core 编辑行 (原值�
 assert(html.includes('value="80,80,80,80"'), 'mtl 原值回显');
 assert(!html.includes('id="game_config.ctb"') && !html.includes('id="game_config.htb"'), 'game_config 不再有 ctb/htb 开关');
 assert(html.includes('<span class="cf-key">ctb</span>') && html.includes('<span class="cf-key">htb</span>'), 'ctb/htb 进只读列表 (能看到值)');
-assert(html.includes('500 (固定)'), 'fps_stabilizer.temp 只读固定 500 展示');
-assert(window._baseObj.fps_stabilizer.temp === 500, '载入即自动把 temp 归一为 500 (原 470)');
+assert(html.includes('500 (只读)'), 'temp=470 只读展示为 500 (只抬不压的有效值)');
+assert(window._baseObj.fps_stabilizer.temp === 470, '载入不再改对象 (原 470 原样保留, 改动留到保存时)');
 
 /* ── 2) 收集: sync 取消=删键 / mtl 字符串保型 / ctb·htb 强制 1 ── */
 qsaResult = [
@@ -60,7 +60,7 @@ let out = api.collectBaseForm();
 assert(!('sync' in out.gpa_config[60]), '取消勾选 sync → 删键 (解析默认无键=关)');
 assert(out.gpa_config[60].mtl === '75,75,75,75', 'mtl 修改后按字符串落盘');
 assert(out.game_config.ctb === 1 && out.game_config.htb === 1, 'game_config.ctb/htb 收集时固定写 1');
-assert(out.fps_stabilizer.temp === 500, 'temp 保持 500 落盘');
+assert(out.fps_stabilizer.temp === 470, 'collectBaseForm 不动 temp (只抬不压发生在保存那一步)');
 
 /* 勾选原本无 sync 的 90 档 → 写数值 1 (不是布尔) */
 qsaResult = [{ id: 'gpa.90.sync', type: 'checkbox', checked: true, tagName: 'INPUT' }];
@@ -89,6 +89,20 @@ qsaResult = [];
 api.collectBaseForm();
 assert(window._baseObj.game_config.ctb === 1 && window._baseObj.game_config.htb === 1, '已有 game_config 缺 ctb/htb → 补 1');
 assert(api.FI.mtl && api.FI.gcSync && !api.FI.core && !api.FI.gcCtb && !api.FI.gcHtb, 'FI 表: mtl/gcSync 在, core/gcCtb/gcHtb 已删');
+
+/* ── 5) clampFsTemp: 只抬不压 (与 from_server 同批调用的那个函数) ── */
+{
+  const a = { fps_stabilizer: { temp: 450, boostStep: 'x' } }; api.clampFsTemp(a);
+  assert(a.fps_stabilizer.temp === 500, 'temp=450 → 抬到 500');
+  const b = { fps_stabilizer: { temp: 600 } }; api.clampFsTemp(b);
+  assert(b.fps_stabilizer.temp === 600, 'temp=600 → 原样保留 (只抬不压)');
+  const c = { fps_stabilizer: { boostStep: 'x' } }; api.clampFsTemp(c);
+  assert(c.fps_stabilizer.temp === 500, 'temp 没写 → 补 500');
+  const d = { package_name: 'p' }; api.clampFsTemp(d);
+  assert(d.fps_stabilizer === undefined, '没有 fps_stabilizer 块 → 不代建');
+  const e = { fps_stabilizer: { temp: '480' } }; api.clampFsTemp(e);
+  assert(e.fps_stabilizer.temp === 500, 'temp 是字符串 480 → 按数值处理抬到 500');
+}
 
 console.log('\n发现问题: ' + bugs);
 process.exit(bugs ? 1 : 0);

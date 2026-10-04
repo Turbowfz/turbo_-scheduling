@@ -49,7 +49,7 @@ const FI = {
   /* ── fps_stabilizer 帧率稳定器 (温度过线后按阶梯一级级加压; earlyDetect 提前救帧) ── */
   fsBoostStep: { k: 'boostStep', n: '提频倍数阶梯', t: '先按 1.1 倍帧预算提频, 不够再 1.3、1.5, 一级一级加码, 官方 "1.1,1.3,1.5"' },
   fsFreqStep: { k: 'freqStep', n: '各簇档位阶梯', t: '与 boostStep 配套: 进第几级提速就套用对应那一组各簇的(上限档,下限档)对; 8G3 常为 3 级×4 簇=24 个数, 个数不对整条不生效' },
-  fsTemp: { k: 'temp', n: '介入温度', t: '×10 (500=50.0°C): 到这个温度才开始靠提频救帧, 官方 500. 表单固定写 500 不给改, 要改用文本版' },
+  fsTemp: { k: 'temp', n: '停手温度', t: '×10 (500=50.0°C): 稳帧提频的"停手线" —— 温度升到这里就关闭提频 (不是到这里才开始), 数字越大提频坚持得越久. 表单只抬不压: 小于 500 (含没写) 保存时抬到官方值 500, 大于 500 原样保留, 不给改' },
   fsBoostTime: { k: 'boostTime', n: '单级保持(秒)', t: '每级 boost 保持多久, 到点自动回落 (官方 70)' },
   fsMode: { k: 'mode', n: '推进模式', t: '"ddl"=按帧 Deadline 推进(快超时就加码, 默认) / "step"=纯步进' },
   fsColdDelay: { k: 'coldDelay', n: '冷启动延迟', t: '冷启动阶段的延迟参数 (官方示例 0; 解析器支持但云控未下发)' },
@@ -92,6 +92,14 @@ function chtbOn(g) {
 }
 /* gpa sync (帧同步) 开关回显: 配置里 >0 视为开 (官方 "sync": 1; 解析默认无键=关) */
 function syncOn(g) { const v = Number(g && g.sync); return isFinite(v) && v > 0; }
+/* fps_stabilizer.temp 只抬不压 (user 要求): 保存时与 from_server 同批处理 —— 小于 500 (含没写)
+   一律抬到官方值 500, 大于 500 原样保留; 块本身不存在则不代建 (没这个功能的配置不硬塞) */
+function clampFsTemp(obj) {
+  const fs0 = obj && obj.fps_stabilizer;
+  if (!fs0 || typeof fs0 !== 'object' || Array.isArray(fs0)) return;
+  const cur = Number(fs0.temp);
+  fs0.temp = (isFinite(cur) && cur > 500) ? cur : 500;
+}
 function sv(root, path, val) {
   const keys = path.split('.'); let cur = root; for (let i = 0; i < keys.length - 1; i++) {
     if (!cur[keys[i]] || typeof cur[keys[i]] !== 'object') cur[keys[i]] = {}; cur = cur[keys[i]]; }
@@ -113,9 +121,6 @@ function collectPaths(o, prefix, set) {
 function renderBaseForm() {
   const form = document.getElementById('cf-base-form'); const obj = _baseObj; if (!form) return; if (!obj) { form.innerHTML = '<div class="empty-tip">请先选择游戏配置</div>'; return; }
 
-  /* fps_stabilizer.temp 固定 500 (官方值; user 要求不给改): 任何载入路径进表单都先归一
-     (已有 fps_stabilizer 块才填, 块本身不存在不代建); 本节只读展示, 保存随对象落盘 */
-  if (obj.fps_stabilizer && typeof obj.fps_stabilizer === 'object' && !Array.isArray(obj.fps_stabilizer)) obj.fps_stabilizer.temp = 500;
   /* 记录原始值与原始存在路径 */
   _baseOrig = {}; _baseExisted = new Set(); const gpa = (obj.gpa_config && typeof obj.gpa_config === 'object') ? obj.gpa_config : {}; const tf = (obj.thermal_frame && typeof obj.thermal_frame === 'object') ? obj.thermal_frame : {}; const cpu = (obj.cpu_config && typeof obj.cpu_config === 'object') ? obj.cpu_config : {}; const gz = (obj.game_zone && typeof obj.game_zone === 'object') ? obj.game_zone : {}; collectPaths(gpa, 'gpa', _baseExisted); collectPaths(tf, 'tf', _baseExisted); collectPaths(cpu, 'cpu', _baseExisted); /* game_zone: JSON 字段 (数组/对象) 作为整叶子路径, 不递归展开下标 */
   ['white_list', 'pipeline', 'bind_list', 'system_process', 'system_server'].forEach(k => {
@@ -178,8 +183,8 @@ function renderBaseForm() {
   }
 
   const fstab = obj.fps_stabilizer || {}; if (fstab && Object.keys(fstab).length) {
-    html += `<div class="cf-sec">fps_stabilizer (掉帧急救队)</div>`; html += `<div class="cf-hint">温度过线后按 boostStep 阶梯一级级提频救帧 · 另有 earlyDetect 子块 (卡顿早检测: rbt/rst/rrt/fet + edb/fst/flt 三路提频, 官方在用) 与 stopTemp/maxBoostTime/safeGuard, 表单不带, 文本版可写 · temp 固定官方值 500 (表单不给改)</div>`; html += fieldRow('fsBoostStep', 'fps_stabilizer.boostStep', gv(fstab, 'boostStep')); html += fieldRow('fsFreqStep', 'fps_stabilizer.freqStep', gv(fstab, 'freqStep')); { const ti = FI.fsTemp || { k: 'temp', n: '', t: '' }; html += `<div class="cf-field"><div class="cf-fl"><span class="cf-key">${ti.k}</span><span class="cf-name">${ti.n}</span><span class="cf-q">?</span></div>
-        <span class="cf-ro">500 (固定)</span></div><div class="cf-tiprow"><div class="cf-tip">${ti.t}</div></div>`; } html += fieldRow('fsMode', 'fps_stabilizer.mode', gv(fstab, 'mode')); if (gv(fstab, 'boostTime') !== null) html += fieldRow('fsBoostTime', 'fps_stabilizer.boostTime', gv(fstab, 'boostTime')); if (gv(fstab, 'coldDelay') !== null) html += fieldRow('fsColdDelay', 'fps_stabilizer.coldDelay', gv(fstab, 'coldDelay')); if (gv(fstab, 'hotDelay') !== null) html += fieldRow('fsHotDelay', 'fps_stabilizer.hotDelay', gv(fstab, 'hotDelay')); }
+    html += `<div class="cf-sec">fps_stabilizer (掉帧急救队)</div>`; html += `<div class="cf-hint">温度过线后按 boostStep 阶梯一级级提频救帧 · 另有 earlyDetect 子块 (卡顿早检测: rbt/rst/rrt/fet + edb/fst/flt 三路提频, 官方在用) 与 stopTemp/maxBoostTime/safeGuard, 表单不带, 文本版可写 · temp 只抬不压 (小于 500 保存时抬到 500, 大于 500 保留, 不给改)</div>`; html += fieldRow('fsBoostStep', 'fps_stabilizer.boostStep', gv(fstab, 'boostStep')); html += fieldRow('fsFreqStep', 'fps_stabilizer.freqStep', gv(fstab, 'freqStep')); { const ti = FI.fsTemp || { k: 'temp', n: '', t: '' }; const tcur = Number(gv(fstab, 'temp')); const teff = (isFinite(tcur) && tcur > 500) ? tcur : 500; html += `<div class="cf-field"><div class="cf-fl"><span class="cf-key">${ti.k}</span><span class="cf-name">${ti.n}</span><span class="cf-q">?</span></div>
+        <span class="cf-ro">${teff} (只读)</span></div><div class="cf-tiprow"><div class="cf-tip">${ti.t}</div></div>`; } html += fieldRow('fsMode', 'fps_stabilizer.mode', gv(fstab, 'mode')); if (gv(fstab, 'boostTime') !== null) html += fieldRow('fsBoostTime', 'fps_stabilizer.boostTime', gv(fstab, 'boostTime')); if (gv(fstab, 'coldDelay') !== null) html += fieldRow('fsColdDelay', 'fps_stabilizer.coldDelay', gv(fstab, 'coldDelay')); if (gv(fstab, 'hotDelay') !== null) html += fieldRow('fsHotDelay', 'fps_stabilizer.hotDelay', gv(fstab, 'hotDelay')); }
 
   /* ── game_zone (关键线程识别与绑核) ── */
   if (Object.keys(gz).length) {

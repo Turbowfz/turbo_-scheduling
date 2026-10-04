@@ -82,7 +82,7 @@ window.loadBaseConfigFromPaste = function() {
     const name = document.getElementById('cf-base-file').value; if (!name || !_baseObj) { cloudLog('请先选择游戏配置', 'warning'); return; }
     if (!safeName(name)) { cloudLog('文件名异常, 已拒绝保存: ' + name, 'error'); return; }
     try {
-      const obj = collectBaseForm(); obj.from_server = 0; /* 保存到 cccf = 本地配置 (区分云端下发值) */
+      const obj = collectBaseForm(); obj.from_server = 0; clampFsTemp(obj); /* 保存到 cccf = 本地配置 (区分云端下发值); fps_stabilizer.temp 与 from_server 同批只抬不压 */
       const j = JSON.stringify(obj, null, 2); await writeFileChecked(`${CCCF}/${name}`, j); cloudLog('已保存到 cccf: ' + name, 'success'); } catch (e) { cloudLog('保存失败: ' + e.message, 'error'); }
   });
 }; /* ═══════════ 文本版: 从本地 cccf 读取 ═══════════ */
