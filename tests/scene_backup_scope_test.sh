@@ -3,7 +3,7 @@
 # (不依赖真机: 只测文件筛选/相对路径/备份-还原往返/老备份清理/还原校验)
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-COMMON="$HERE/../模块/Turbo调度26.112/scripts/common.sh"
+COMMON="$HERE/../模块/Turbo调度26.113/scripts/common.sh"
 [ -f "$COMMON" ] || { echo "找不到 common.sh: $COMMON"; exit 1; }
 
 TMP=$(mktemp -d)

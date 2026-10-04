@@ -229,12 +229,11 @@ body{
   display:none;
   contain:layout style;
 }
-/* 页面切换入场: 切到哪页哪页淡入上滑 (display 切换会重新触发动画) */
-@keyframes page-in{
-  0%  {opacity:0;transform:translateY(12px) scale(.992)}
-  100%{opacity:1;transform:translateY(0)   scale(1)}
-}
-.page.active{display:block;animation:page-in .34s cubic-bezier(.3,1.25,.4,1) both}
+/* 页面不做入场动画 (113 修复"模糊缺失"): 祖先元素带 transform 或透明度动画时,
+   Chromium 会把 backdrop-filter 的取样范围圈在该元素内部, 页面底下那层背景就糊不到了,
+   卡片玻璃整页失效; 且动画 both 会把 transform 永久留在页面上, 不是动画期间临时失效。
+   卡片自己的入场 (card-zoom-in) 不受影响 —— 元素自身的 transform 不隔离它自己的模糊。 */
+.page.active{display:block}
 
 .tabbar-wrap{
   position:fixed;bottom:0;left:0;right:0;z-index:200;

@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 global.window = {};
-const code = fs.readFileSync(path.join(__dirname, '..', '模块', 'Turbo调度26.112', 'webroot', 'physics.js'), 'utf8');
+const code = fs.readFileSync(path.join(__dirname, '..', '模块', 'Turbo调度26.113', 'webroot', 'physics.js'), 'utf8');
 eval(code);
 const P = window.tPhysics;
 if (!P) { console.error('FAIL physics.js 未挂载 tPhysics'); process.exit(1); }

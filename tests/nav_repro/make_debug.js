@@ -2,7 +2,7 @@
    源 = 当前(修复版) webroot/nav.js。输出 tests/nav_repro/nav_debug.js */
 const fs = require('fs');
 const path = require('path');
-const SRC = path.resolve(__dirname, '..', '..', '模块', 'Turbo调度26.112', 'webroot', 'nav.js');
+const SRC = path.resolve(__dirname, '..', '..', '模块', 'Turbo调度26.113', 'webroot', 'nav.js');
 const OUT = path.resolve(__dirname, 'nav_debug.js');
 
 let s = fs.readFileSync(SRC, 'utf8');

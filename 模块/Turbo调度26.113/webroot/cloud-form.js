@@ -1,6 +1,6 @@
 /* ── 云控页 · 基础版表单层: 参数注释表 / 表单渲染 / 表单收集 ──
    依赖 core.js (escapeHTML); 依赖 cloud-io.js 的运行期存在 (_baseObj 挂 window)
-   参数依据: 6.1云控配置参数解析.jsonc (骁龙8Gen3/ACE3Pro) + 全机型官方云控配置普查 */
+   参数依据: 6.1云控配置参数解析.jsonc v4 全表 (416 键, 反编译实锤默认值) + 全机型官方云控配置普查 */
 
 /* 状态挂 window: 经典 script 全局词法绑定与 window 属性互通, 便于跨脚本/测试访问 */
 window._baseObj = null; /* 基础版当前编辑的游戏配置对象 */
@@ -8,7 +8,7 @@ window._baseOrig = {}; /* id -> 原始值 (类型保持) */
 window._baseExisted = new Set(); /* 配置里原本就存在的字段路径 */
 
 /* ═══════════ 参数注释表 ═══════════
-   依据: 6.1云控配置参数解析.jsonc (骁龙8Gen3/ACE3Pro) —— 反编译实锤 + 全机型官方云控普查
+   依据: 6.1云控配置参数解析.jsonc v4 (416 键全表, 默认值仅收录反编译实锤) —— 骁龙8Gen3/ACE3Pro + 全机型官方云控普查
    簇的顺序(全文通用): 小核=CPU0-1 · 大核=CPU2-4 · 中核=CPU5-6 · 超大核=CPU7
    档位(全文通用): 该簇频率表的下标(从 0 起, 由低到高), -1 通常=自动/不限制
    命名口诀: s=小核 c=大核 t=中核 g=超大核; l/f=下限 h/m=上限                        */
@@ -22,7 +22,7 @@ const FI = {
   tl: { k: 'tl', n: '中核频率下限', t: '中核(5-6)保底档: 中核是主力核, 抬底频对稳定感最明显. -1=自动 (共32档 0~31)' },
   th: { k: 'th', n: '中核频率上限', t: '中核(5-6)封顶档: 中核一般跑系统杂活, 压低它不影响游戏主体' },
   core: { k: 'core', n: '核心参与表', t: '逗号 8 值对应 8 颗核: 1=这颗核允许参与关键任务调度, -1=不限制/默认 (解析默认全 -1)' },
-  chtbEnable: { k: 'chtb enable', n: '提频总闸 (跟随game_config)', t: 'Critical & Heavy Task Boost 总闸: 给游戏的关键线程与重负载线程单独拉频率, 配套数值在 game_config 里 (cht_boost_max/min、ctn、ctep). 本档位跑到的帧率才生效, 所以每个帧率档位都要开. 跟随 game_config: 添加 game_config 时会自动给每个帧率档位补上 chtb:{enable:true}; 配置里显式写了 enable:false 才是关' },
+  chtbEnable: { k: 'chtb enable', n: '提频总闸 (跟随game_config)', t: 'Critical & Heavy Task Boost 总闸 (内核源码注释原话 "critical and heavy task boost, from GPA"): 给游戏的关键线程与重负载线程单独拉频率, 配套数值在 game_config 里 (cht_boost_max/min、ctn、ctep), 解析默认 0=不写就是关. 本档位跑到的帧率才生效, 所以每个帧率档位都要开. 跟随 game_config: 添加 game_config 时会自动给每个帧率档位补上 chtb:{enable:true}; 配置里显式写了 enable:false 才显示为关' },
   /* ── gpa_config.es4g 关键线程隔离 (给游戏最要命的几个线程圈专属包厢) ── */
   es4gState: { k: 'es4g state', n: '蜂鸟总开关', t: 'true=进游戏启用关键线程隔离, 本块其它设置随之生效' },
   es4gIsolate: { k: 'es4g isolate', n: '隔离核表', t: '10 进制掩码, 第 N 位=CPU N, 如 144=0b10010000=CPU4+CPU7. 最多 3 个值, 强度递增: ①核上有任务也照抢 ②高优先任务来抢时才隔离 ③绝对隔离(闲着也不给别人)' },
@@ -32,10 +32,12 @@ const FI = {
   es4gDelay: { k: 'es4g delay', n: '延迟启用(ms)', t: '进游戏先别圈地, 等加载完、线程都冒头了再生效 (官方 30000=30 秒)' },
   es4gPartial: { k: 'es4g partial', n: '允许外迁', t: 'true=区外线程可迁到别的核(动态腾地方); false=死守隔离区' },
   /* ── gpa_config.mema (multi-ema 调频大脑: EMA 平滑负载毛刺后再换算频率) ── */
-  memaBeta: { k: 'mema beta', n: 'EMA 平滑系数', t: '决定"新采样"和"历史平均"各占多大权重, 官方默认 45; custom 里可按核段单独覆盖' },
-  memaMode: { k: 'mema mode', n: '簇内负载合并', t: '一簇多核怎么合成一个数: 0=取最大(一颗忙就当整簇忙, 最激进) 1=取平均 2=取中位数(抗个别核抽风, 最稳). 官方 2' },
+  memaBeta: { k: 'mema beta', n: 'EMA 平滑系数', t: '决定"新采样"和"历史平均"各占多大权重, 官方常用 45; custom 里可按核组单独覆盖' },
+  memaMode: { k: 'mema mode', n: '簇内负载合并', t: '一簇多核怎么合成一个数: 0=取最大(一颗忙就当整簇忙, 最激进) 1=取平均 2=取中位数(抗个别核抽风, 最稳). 官方常用 2' },
   memaTl: { k: 'mema tl', n: '目标负载表', t: '每两个数一组=(util 分段点 0..1024 递增, 该段目标负载%), 官方 "0,80,300,90". 目标负载越低=要求留的余量越大=算出的频率越高=越流畅越费电' },
-  /* ── game_config 关键/重任务提频 (CHTB; 触发后真正把频率抬起来的是 min 不是 max) ── */
+  /* ── game_config 关键/重任务提频 (CHTB; 内核侧总闸 ctb/htb, 触发后真正把频率抬起来的是 min 不是 max) ── */
+  gcCtb: { k: 'ctb', n: '关键线程盯防', t: 'Critical Task Boost 开关 → task_boost/ct_ena: 盯关键线程 (命中 ctn 名单、占比过 ctep 线才出手), 0/1, 官方 1' },
+  gcHtb: { k: 'htb', n: '重负载盯防', t: 'Heavy Task Boost 开关 → task_boost/htb_en: 盯重负载线程, 与 ctb 一对搭档, 0/1, 官方 1' },
   gcBoostMax: { k: 'cht_boost_max', n: '提频天花板(只解封)', t: '(CPU号,档位)对, 如 "0,17,4,24,5,19,7,30". 内核只把它进 FREQ_QOS_MAX 且取 max(原上限,它) —— 作用是把被 GPA/温控压低的封顶抬起来, 它自己不会让频率跳' },
   gcBoostMin: { k: 'cht_boost_min', n: '提频地板(真提频)', t: '(CPU号,档位)对, 与 max 配套. 内核进 FREQ_QOS_MIN 且 final_min=max(原下限,它) —— 触发后频率"跳上去"靠的是它; 两个一起生效=给该 CPU 一个频率窗口[min, max(原上限,max)]' },
   gcCtn: { k: 'ctn', n: '关键线程名单', t: '线程名, 多个用空格隔开 → critical_task_name, 命中即当关键线程照顾' },
@@ -47,10 +49,10 @@ const FI = {
   /* ── fps_stabilizer 帧率稳定器 (温度过线后按阶梯一级级加压; earlyDetect 提前救帧) ── */
   fsBoostStep: { k: 'boostStep', n: '提频倍数阶梯', t: '先按 1.1 倍帧预算提频, 不够再 1.3、1.5, 一级一级加码, 官方 "1.1,1.3,1.5"' },
   fsFreqStep: { k: 'freqStep', n: '各簇档位阶梯', t: '与 boostStep 配套: 进第几级提速就套用对应那一组各簇的(上限档,下限档)对; 8G3 常为 3 级×4 簇=24 个数, 个数不对整条不生效' },
-  fsTemp: { k: 'temp', n: '介入温度', t: '×10 (500=50.0°C): 到这个温度才开始靠提频救帧, 解析默认 500' },
+  fsTemp: { k: 'temp', n: '介入温度', t: '×10 (500=50.0°C): 到这个温度才开始靠提频救帧, 官方 500' },
   fsBoostTime: { k: 'boostTime', n: '单级保持(秒)', t: '每级 boost 保持多久, 到点自动回落 (官方 70)' },
-  fsMode: { k: 'mode', n: '推进模式', t: '"ddl"=按帧 Deadline 推进(快超时就加码, 解析默认) / "step"=纯步进' },
-  fsColdDelay: { k: 'coldDelay', n: '冷启动延迟(秒)', t: '冷启动阶段的延迟参数 (解析默认 0)' },
+  fsMode: { k: 'mode', n: '推进模式', t: '"ddl"=按帧 Deadline 推进(快超时就加码, 默认) / "step"=纯步进' },
+  fsColdDelay: { k: 'coldDelay', n: '冷启动延迟', t: '冷启动阶段的延迟参数 (官方示例 0; 解析器支持但云控未下发)' },
   fsHotDelay: { k: 'hotDelay', n: '热状态延迟(秒)', t: '热状态下延迟多久再动作 (官方 20)' },
   /* ── cpu_config 场景化提频 (加载/跳伞这类"大家都知道会卡"的瞬间按围栏钉一段时间) ── */
   ccBoost: { k: 'boost', n: '频率围栏串', t: '8 个数两两一组=(上限档,下限档), 按 小核→大核→中核→超大核 套用: "12,6,23,5,16,5,25,7"=小核[6..12] 大核[5..23] 中核[5..16] 超大核[7..25]; 空=这个场景用系统默认提速, 不围栏' },
@@ -122,10 +124,10 @@ function renderBaseForm() {
   {
     /* 官方场景名参考表 (不在表里的场景名会被直接忽略, 乱加无效) */
     const SCENE_REF = [
-      ['start', '点图标启动', '点图标冷启动阶段, 官方常用 (time 1500~30000)'], ['loading', '加载', '读盘加载阶段, 官方最常见 (time 5000~14000)'], ['logging', '战斗日志', '战斗日志阶段〔支〕'], ['sceneswitch', '进出对局/传送', '进出对局、传送读图 (原神/星铁, time 10000~20000)'], ['tuanzhan', '团战', '团战阶段 (王者)'], ['battle', '战斗', '战斗阶段'], ['rolefreeze', '选人定格', '选人/选角色时定格 (原神)'], ['parachute', '开伞滑翔', '开伞滑翔阶段 (和平精英, time 60000)'], ['drive', '开车', '驾驶阶段 (和平精英)'], ['landing', '跳伞落地', '跳伞/落地瞬间, 人最多最容易卡 (和平精英, time 30000)'], ['chooserole', '选角色', '选角色阶段'], ['tcg', '卡牌对战', '原神七圣召唤'], ['abypass', '深渊', '原神深渊副本'], ['overload', '过载', '过载场景'], ]; const sceneNames = Object.keys(cpu).sort(); html += `<div class="cf-sec">cpu_config (场景化提频)<span style="flex:1"></span><button type="button" class="btn" data-cpu-add style="flex:none;padding:5px 12px;font-size:var(--fs-xs)">添加场景</button></div>`; html += `<div class="cf-hint">boost=频率围栏 (8 个数两两一组=(上限档,下限档), 按 小核→大核→中核→超大核; 空=这个场景用系统默认提速, 不围栏) · time=围栏保持(ms), 到点自动撤销还给 gpa_config · 场景由你手动添加</div>`; /* 官方场景名参考 (可折叠; 标出已添加) */
+      ['start', '点图标启动', '点图标冷启动阶段, 官方常用 (time 1500~30000)'], ['loading', '加载', '读盘加载阶段, 官方最常见 (time 5000~14000)'], ['logging', '战斗日志', '战斗日志阶段〔支〕'], ['sceneswitch', '进出对局/传送', '进出对局、传送读图 (原神/星铁, time 10000~20000)'], ['tuanzhan', '团战', '团战阶段 (王者)'], ['battle', '战斗', '战斗阶段'], ['rolefreeze', '选人定格', '选人/选角色时定格 (原神)'], ['parachute', '开伞滑翔', '开伞滑翔阶段 (和平精英, time 60000)'], ['drive', '开车', '驾驶阶段 (和平精英)'], ['landing', '跳伞落地', '跳伞/落地瞬间, 人最多最容易卡 (和平精英, time 30000)'], ['chooserole', '选角色', '选角色阶段'], ['tcg', '卡牌对战', '原神七圣召唤'], ['abypass', '深渊', '原神深渊副本'], ['overload', '过载', '过载场景'], ['mdcity', '蒙德城', '开放世界地图场景 (原神/鸣潮系地名缩写): 进出蒙德城触发〔支〕'], ['mdvillage', '蒙德村', '进出蒙德村落触发〔支〕'], ['lycity', '璃月城', '进出璃月城触发〔支〕'], ['lyvillage', '璃月村', '进出璃月村落触发〔支〕'], ['dqcity', '稻妻城', '进出稻妻城触发〔支〕'], ['dqvillage', '稻妻村', '进出稻妻村落触发〔支〕'], ['xmcity', '须弥城', '进出须弥城触发〔支〕'], ['xmvillage', '须弥村', '进出须弥村落触发〔支〕'], ['fdcity', '枫丹城', '进出枫丹城触发〔支〕'], ['fdvillage', '枫丹村', '进出枫丹村落触发〔支〕'], ['yxgvillage', '渊下宫', '原神渊下宫区域〔支〕'], ['cyjyvillage', '层岩巨渊', '原神层岩巨渊区域〔支〕'], ]; const sceneNames = Object.keys(cpu).sort(); html += `<div class="cf-sec">cpu_config (场景化提频)<span style="flex:1"></span><button type="button" class="btn" data-cpu-add style="flex:none;padding:5px 12px;font-size:var(--fs-xs)">添加场景</button></div>`; html += `<div class="cf-hint">boost=频率围栏 (8 个数两两一组=(上限档,下限档), 按 小核→大核→中核→超大核; 空=这个场景用系统默认提速, 不围栏) · time=围栏保持(ms), 到点自动撤销还给 gpa_config · 场景由你手动添加</div>`; /* 官方场景名参考 (可折叠; 标出已添加) */
     html += `<details class="cf-gp"><summary>◈ 官方场景名参考 (手动添加用)</summary><div class="cf-gp-body">`; SCENE_REF.forEach(([n, cn, d]) => {
       const has = Object.prototype.hasOwnProperty.call(cpu, n); html += `<div class="cf-field"><div class="cf-fl"><span class="cf-key">${escapeHTML(n)}</span><span class="cf-name">${escapeHTML(cn)}</span></div>${has ? '<span class="cf-ro" style="color:#3fb950">已添加</span>' : ''}</div>
-        <div class="cf-tiprow" style="display:block"><div class="cf-tip">${escapeHTML(d)}</div></div>`; }); html += `<div class="cf-hint" style="margin-top:6px">地图城/村识别 (原神): 前缀 蒙德=md 璃月=ly 稻妻=dq 须弥=xm 枫丹=fd + 后缀 city=城 / village=村, 另有 yxgvillage / cyjyvillage. 官方实际只下发 start/loading/parachute/landing/sceneswitch 几个</div>`; html += `</div></details>`; html += `<div id="cpu-add-row" style="display:none;align-items:center;gap:6px;margin:6px 0">
+        <div class="cf-tiprow" style="display:block"><div class="cf-tip">${escapeHTML(d)}</div></div>`; }); html += `<div class="cf-hint" style="margin-top:6px">解析器共认 28 个场景键 (上表即全量); 官方实际只下发 start/loading/parachute/landing/sceneswitch 几个, 城/村场景云控未下发: 前缀 蒙德=md 璃月=ly 稻妻=dq 须弥=xm 枫丹=fd + 后缀 city=城 / village=村, 另有 yxgvillage(渊下宫) / cyjyvillage(层岩巨渊)</div>`; html += `</div></details>`; html += `<div id="cpu-add-row" style="display:none;align-items:center;gap:6px;margin:6px 0">
       <input type="text" class="inp" id="cpu-add-name" placeholder="场景名 (从上面参考表选, 仅字母/数字/_/-)" style="flex:1">
       <button type="button" class="btn" data-cpu-add-ok style="flex:none;padding:5px 12px;font-size:var(--fs-xs)">确定</button></div>`; /* 只渲染配置里实际存在的场景 */
     if (sceneNames.length) {
@@ -139,7 +141,7 @@ function renderBaseForm() {
   /* ── gpa_config (帧率档位) ──
      可编辑: 频率上下限 + 调频算法/温控配套(官方高频键) + core + es4g 全部 + mema 全部 */
   if (fpsList.length) {
-    html += `<div class="cf-sec">gpa_config (${flatGpa ? '全局配置' : '帧率档位'})</div>`; html += `<div class="cf-hint">${flatGpa ? '当前官方配置未按 60/90/120 分档, 以下为全局 GPA 参数' : '帧率档位: 60/90/120 等 · 档位=该簇频率表下标(从 0 起, 由低到高), -1=自动/不限'} · 只显示核心上下限, core, chtb, es4g, mema</div>`; fpsList.forEach(fps => {
+    html += `<div class="cf-sec">gpa_config (${flatGpa ? '全局配置' : '帧率档位'})</div>`; html += `<div class="cf-hint">${flatGpa ? '当前官方配置未按 60/90/120 分档, 以下为全局 GPA 参数' : '帧率档位: 60/90/120 等 · 档位=该簇频率表下标(从 0 起, 由低到高), -1=自动/不限'} · 只显示核心上下限, core, chtb, es4g, mema · 其余官方键 (mtl/fast/sft/framedrop/dpcpus/sync/fakeMaxFreq 等) 原样保留</div>`; fpsList.forEach(fps => {
       const g = flatGpa ? gpa : (gpa[fps] || {}); const gp = flatGpa ? '' : fps + '.'; html += `<details class="cf-gp"${firstOpen(fps)}><summary>◆ ${escapeHTML(fpsLabel(fps))}</summary><div class="cf-gp-body">`; /* 仅编辑核心频率上下限 + 开关核心 */
       html += fieldRow('cl', 'gpa.' + gp + 'cl', gv(g, 'cl')); html += fieldRow('ch', 'gpa.' + gp + 'ch', gv(g, 'ch')); html += fieldRow('sm', 'gpa.' + gp + 'sm', gv(g, 'sm')); html += fieldRow('gf', 'gpa.' + gp + 'gf', gv(g, 'gf')); html += fieldRow('gm', 'gpa.' + gp + 'gm', gv(g, 'gm')); html += fieldRow('tl', 'gpa.' + gp + 'tl', gv(g, 'tl')); html += fieldRow('th', 'gpa.' + gp + 'th', gv(g, 'th')); html += fieldRow('core', 'gpa.' + gp + 'core', gv(g, 'core')); /* chtb: 关键/重负载任务提频总闸 (没有配置也能勾选创建; 添加 game_config 时自动补齐) */
       html += `<div class="cf-fps">▸ chtb (关键/重负载提频总闸)</div>`; html += fieldCheck('chtbEnable', 'gpa.' + gp + 'chtb.enable', chtbOn(g)); /* es4g: 没有配置也显示添加入口 */
@@ -163,15 +165,15 @@ function renderBaseForm() {
   /* ── game_config (游戏期加速控制; 只可改 cht_boost_max / cht_boost_min / ctn / ctep) ── */
   {
     const gc = (obj.game_config && typeof obj.game_config === 'object') ? obj.game_config : null; const hasGc = gc && Object.keys(gc).length; html += `<div class="cf-sec">game_config (游戏期加速控制)`; if (!hasGc) {
-      html += `<span style="flex:1"></span><button type="button" class="btn" data-gc-add style="flex:none;padding:5px 12px;font-size:var(--fs-xs)">添加</button></div>`; html += `<div class="cf-hint">有的游戏配置没有 game_config, 可点击添加 (只可编辑 cht_boost_max / cht_boost_min / ctn / ctep, 其余键只读保留; 真正把频率抬起来的是 cht_boost_min, max 只解封天花板)<br>· 添加时会自动给 gpa_config 的每个帧率档位 (含没有频率参数的档位; 未分档的则挂在全局) 补上 chtb:{enable:true} —— GPA 侧的关键/重负载提频总闸, 不写不生效</div>`; } else {
-      html += `</div>`; html += `<div class="cf-hint">只可编辑 cht_boost_max / cht_boost_min / ctn / ctep · 其余键只读 · 真正把频率抬起来的是 min, max 只解封被压低的封顶 · 保存到 cccf 时 from_server 自动置 0</div>`; html += `<details class="cf-gp" open><summary>◈ 可编辑</summary><div class="cf-gp-body">`; html += fieldRow('gcBoostMax', 'game_config.cht_boost_max', gv(gc, 'cht_boost_max')); html += fieldRow('gcBoostMin', 'game_config.cht_boost_min', gv(gc, 'cht_boost_min')); html += fieldRow('gcCtn', 'game_config.ctn', gv(gc, 'ctn')); html += fieldRow('gcCtep', 'game_config.ctep', gv(gc, 'ctep')); html += `</div></details>`; const roKeys = Object.keys(gc).filter(k => !['cht_boost_max', 'cht_boost_min', 'ctn', 'ctep'].includes(k)).sort(); if (roKeys.length) {
+      html += `<span style="flex:1"></span><button type="button" class="btn" data-gc-add style="flex:none;padding:5px 12px;font-size:var(--fs-xs)">添加</button></div>`; html += `<div class="cf-hint">有的游戏配置没有 game_config, 可点击添加 (可编辑 ctb / htb / cht_boost_max / cht_boost_min / ctn / ctep, 其余键只读保留; 真正把频率抬起来的是 cht_boost_min, max 只解封天花板)<br>· 添加时会自动给 gpa_config 的每个帧率档位 (含没有频率参数的档位; 未分档的则挂在全局) 补上 chtb:{enable:true} —— GPA 侧的关键/重负载提频总闸, 不写不生效; 内核侧开关是 ctb/htb (→ task_boost/ct_ena、htb_en)</div>`; } else {
+      html += `</div>`; html += `<div class="cf-hint">可编辑 ctb / htb / cht_boost_max / cht_boost_min / ctn / ctep · 其余键只读 (scaling_max/min、reset_scaling_*、rgr、perfd、mingap/numbusy/penalty 等解析器也认) · 真正把频率抬起来的是 min, max 只解封被压低的封顶 · 保存到 cccf 时 from_server 自动置 0</div>`; html += `<details class="cf-gp" open><summary>◈ 可编辑</summary><div class="cf-gp-body">`; html += fieldCheck('gcCtb', 'game_config.ctb', !!gv(gc, 'ctb')); html += fieldCheck('gcHtb', 'game_config.htb', !!gv(gc, 'htb')); html += fieldRow('gcBoostMax', 'game_config.cht_boost_max', gv(gc, 'cht_boost_max')); html += fieldRow('gcBoostMin', 'game_config.cht_boost_min', gv(gc, 'cht_boost_min')); html += fieldRow('gcCtn', 'game_config.ctn', gv(gc, 'ctn')); html += fieldRow('gcCtep', 'game_config.ctep', gv(gc, 'ctep')); html += `</div></details>`; const roKeys = Object.keys(gc).filter(k => !['cht_boost_max', 'cht_boost_min', 'ctn', 'ctep', 'ctb', 'htb'].includes(k)).sort(); if (roKeys.length) {
         html += `<details class="cf-gp"><summary>◈ 只读 (官方参数)</summary><div class="cf-gp-body">`; roKeys.forEach(k => {
           const v = gc[k]; const vs = (v === null || v === undefined) ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v)); html += `<div class="cf-field"><div class="cf-fl"><span class="cf-key">${escapeHTML(k)}</span></div><span class="cf-ro">${escapeHTML(vs)}</span></div>`; }); html += `</div></details>`; }
     }
   }
 
   const fstab = obj.fps_stabilizer || {}; if (fstab && Object.keys(fstab).length) {
-    html += `<div class="cf-sec">fps_stabilizer (掉帧急救队)</div>`; html += fieldRow('fsBoostStep', 'fps_stabilizer.boostStep', gv(fstab, 'boostStep')); html += fieldRow('fsFreqStep', 'fps_stabilizer.freqStep', gv(fstab, 'freqStep')); html += fieldRow('fsTemp', 'fps_stabilizer.temp', gv(fstab, 'temp')); html += fieldRow('fsMode', 'fps_stabilizer.mode', gv(fstab, 'mode')); if (gv(fstab, 'boostTime') !== null) html += fieldRow('fsBoostTime', 'fps_stabilizer.boostTime', gv(fstab, 'boostTime')); if (gv(fstab, 'coldDelay') !== null) html += fieldRow('fsColdDelay', 'fps_stabilizer.coldDelay', gv(fstab, 'coldDelay')); if (gv(fstab, 'hotDelay') !== null) html += fieldRow('fsHotDelay', 'fps_stabilizer.hotDelay', gv(fstab, 'hotDelay')); }
+    html += `<div class="cf-sec">fps_stabilizer (掉帧急救队)</div>`; html += `<div class="cf-hint">温度过线后按 boostStep 阶梯一级级提频救帧 · 另有 earlyDetect 子块 (卡顿早检测: rbt/rst/rrt/fet + edb/fst/flt 三路提频, 官方在用) 与 stopTemp/maxBoostTime/safeGuard, 表单不带, 文本版可写</div>`; html += fieldRow('fsBoostStep', 'fps_stabilizer.boostStep', gv(fstab, 'boostStep')); html += fieldRow('fsFreqStep', 'fps_stabilizer.freqStep', gv(fstab, 'freqStep')); html += fieldRow('fsTemp', 'fps_stabilizer.temp', gv(fstab, 'temp')); html += fieldRow('fsMode', 'fps_stabilizer.mode', gv(fstab, 'mode')); if (gv(fstab, 'boostTime') !== null) html += fieldRow('fsBoostTime', 'fps_stabilizer.boostTime', gv(fstab, 'boostTime')); if (gv(fstab, 'coldDelay') !== null) html += fieldRow('fsColdDelay', 'fps_stabilizer.coldDelay', gv(fstab, 'coldDelay')); if (gv(fstab, 'hotDelay') !== null) html += fieldRow('fsHotDelay', 'fps_stabilizer.hotDelay', gv(fstab, 'hotDelay')); }
 
   /* ── game_zone (关键线程识别与绑核) ── */
   if (Object.keys(gz).length) {
@@ -190,7 +192,7 @@ function renderBaseForm() {
      统一标准格式 { balance_nl, highperf_nl, ternary:false }: 一代格式 (tt/phase/param/mg/mgc) 的 param 会逐档压帧率下限, mg 会在高温时强制退档掉帧, 故保存时整档替换为标准 NL 曲线 (只按温度降目标帧率, 不压频率下限) */
   {
     const TF_STD = {
-      60: { balance_nl: '50,45,52,30', highperf_nl: '53,45,55,30' }, 90: { balance_nl: '49,60,51,45', highperf_nl: '52,60,54,45' }, 120: { balance_nl: '48,90,50,60', highperf_nl: '51,90,53,60' }, 144: { balance_nl: '47,120,49,90', highperf_nl: '50,120,52,90' }, }; const tfFps = Object.keys(tf).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)); html += `<div class="cf-sec">thermal_frame (温控降帧)<span style="flex:1"></span><button type="button" class="btn" data-tf-reset style="flex:none;padding:5px 12px;font-size:var(--fs-xs)">重置</button></div>`; html += `<div class="cf-hint">统一标准格式: balance_nl / highperf_nl / ternary=false · NL曲线=成对(温度°C, 目标帧率), "44,90,46,60"=44°C 还有 90 帧、46°C 只给 60 帧 (温度就是 °C, 不是 ×10) · 一代 tt/param/mg 格式保存时自动转换 · 重置=全部档位恢复官方默认值</div>`; const tfItems = tfFps.length ? tfFps : Object.keys(TF_STD); tfItems.forEach(fps => {
+      60: { balance_nl: '50,45,52,30', highperf_nl: '53,45,55,30' }, 90: { balance_nl: '49,60,51,45', highperf_nl: '52,60,54,45' }, 120: { balance_nl: '48,90,50,60', highperf_nl: '51,90,53,60' }, 144: { balance_nl: '47,120,49,90', highperf_nl: '50,120,52,90' }, }; const tfFps = Object.keys(tf).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)); html += `<div class="cf-sec">thermal_frame (温控降帧)<span style="flex:1"></span><button type="button" class="btn" data-tf-reset style="flex:none;padding:5px 12px;font-size:var(--fs-xs)">重置</button></div>`; html += `<div class="cf-hint">统一标准格式: balance_nl / highperf_nl / ternary=false · NL曲线=成对(温度°C, 目标帧率), "44,90,46,60"=44°C 还有 90 帧、46°C 只给 60 帧 (温度就是 °C, 不是 ×10) · 一代 tt/param/mg 格式保存时自动转换 · 重置=全部档位恢复官方默认值 · 解析器另有 powersave/xperfmode/sysperf 三档 NL 曲线与 fi/magt 等策略族, 表单不带</div>`; const tfItems = tfFps.length ? tfFps : Object.keys(TF_STD); tfItems.forEach(fps => {
       const std = TF_STD[fps]; const cur = tf[fps] || {}; const bal = (typeof cur.balance_nl === 'string' && cur.balance_nl) ? cur.balance_nl : (std ? std.balance_nl : ''); const hi = (typeof cur.highperf_nl === 'string' && cur.highperf_nl) ? cur.highperf_nl : (std ? std.highperf_nl : ''); /* ternary 固定 false, 不可修改 (只读展示) */
       const info = FI.tfTernary || { k: 'ternary', n: '', t: '' }; html += `<details class="cf-gp"><summary>◆ ${escapeHTML(fps)}Hz</summary><div class="cf-gp-body">`; html += fieldRow('tfBalance', 'tf.' + fps + '.balance_nl', bal); html += fieldRow('tfHighperf', 'tf.' + fps + '.highperf_nl', hi); html += `<div class="cf-field"><div class="cf-fl"><span class="cf-key">${info.k}</span>${info.n ? '<span class="cf-name">' + info.n + '</span>' : ''}</div>
         <span class="cf-ro">false (固定)</span></div>`; html += `</div></details>`; }); window._tfStd = TF_STD; /* 重置按钮用 */
