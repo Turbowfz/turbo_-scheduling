@@ -203,9 +203,16 @@ if (P.mode === 'tap') {
     touchEv('touchmove', x0 + (stopX - x0) * (i / moves), y);
   }
   /* stopMark 必须在等待之前记: 它是"手指停住"的时刻 (等待 900ms 后才松手,
-     记晚了会把松手后的落档飞行当成按住期) */
+     记晚了会把松手后的落档飞行当成按住期)。
+     stopRelX 换算到布局坐标 (除掉 tabbar 自身变换): tabbar 入场动画在遮挡窗格里
+     会冻在 0.92 —— nav.js 的滑块位置全在布局坐标系, 不换算会差出 ~8% 的假偏差 */
   stopMark = performance.now() - t0;
-  stopRelX = +(stopX - tb.getBoundingClientRect().left).toFixed(1);
+  {
+    const csm = /matrix\(([-\d.eE+]+),/.exec(getComputedStyle(tb).transform || '');
+    const sc = (csm && isFinite(parseFloat(csm[1])) && Math.abs(parseFloat(csm[1])) > 0.05) ? parseFloat(csm[1]) : 1;
+    const bw = parseFloat(getComputedStyle(tb).borderLeftWidth) || 0;
+    stopRelX = +(((stopX - (tb.getBoundingClientRect().left + bw * sc)) / sc)).toFixed(1);
+  }
   await sleep(900);   /* 手指停住按 900ms, 单看拖动弹簧的冲量回落 */
   touchEv('touchend', stopX, y);
   await sleep(800);

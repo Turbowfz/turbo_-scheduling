@@ -18,17 +18,29 @@ function refreshWhenIdle(fn, delay) {
   }, delay || 0);
 }
 
-/* 档位真实几何 (浮点): 基准 = tabbar 内容盒左缘 (与拖拽/飞行的 visRects 同一套数学)。
+/* 档位真实几何 (浮点, 布局坐标系): 基准 = tabbar 内容盒左缘, 与拖拽/飞行的 visRects 同一套数学。
    全部落位/校正写它 —— offsetLeft/offsetWidth 是四舍五入的整数, 与飞行的浮点落定值混用
    会差出 ~1px, 而落定后样式表的 left/width 过渡是活的, 这 ~1px 会被放大成一次
-   0.38s 的弹性漂移 ("落定后过一下又挪一下"的元凶) */
+   0.38s 的弹性漂移 ("落定后过一下又挪一下"的元凶)。
+   ⚠️ 祖先变换补偿: tabbar 自带的入场动画 (scale 0.92→1) 会让 getBoundingClientRect 的
+   相对距离全部 ×scale —— 不除掉的话, 动画期间测到的位置被缩小 8%, 写进 left 就是永久
+   错位 (开 WebUI 头 ~0.4s 内点按/首次状态刷新触发归位会中招)。s=1 时与直测等价 */
+function tbSelfScale(bar) {
+  const t = getComputedStyle(bar).transform;
+  if (!t || t === 'none') return 1;
+  const m = /matrix\(([-\d.eE+]+),/.exec(t);
+  const v = m ? parseFloat(m[1]) : 1;
+  return (isFinite(v) && Math.abs(v) > 0.05) ? v : 1;
+}
 function tabGeom(name) {
   const el = document.getElementById('tab-' + name);
   const bar = document.getElementById('tabbar');
   if (!el || !bar || el.offsetWidth < 1) return null;
-  const bl = bar.getBoundingClientRect().left + (parseFloat(getComputedStyle(bar).borderLeftWidth) || 0);
+  const s = tbSelfScale(bar);
+  const bw = parseFloat(getComputedStyle(bar).borderLeftWidth) || 0;
+  const bl = bar.getBoundingClientRect().left + bw * s;
   const r = el.getBoundingClientRect();
-  return { left: r.left - bl, width: r.width };
+  return { left: (r.left - bl) / s, width: r.width / s };
 }
 function moveIndicator(tabEl) {
   if (_tabbarDragging || _indFrozen) return;
@@ -102,7 +114,7 @@ window.addEventListener('load', () => {
   const P = window.tPhysics;
 
   let visNames = [], visRects = [];
-  let tbLeft = 0, baseLeft = 0;   /* baseLeft: 拖拽/飞行期间指示器 left 冻结为此值, 位移全走 translate (缩放走独立 scale) */
+  let tbLeft = 0, tbScale = 1, baseLeft = 0;   /* baseLeft: 拖拽/飞行期间指示器 left 冻结为此值, 位移全走 translate (缩放走独立 scale) */
   let startX = 0, startY = 0;
   let dragging = false, intentDecided = false;
   let lastBest = 0;
@@ -117,19 +129,25 @@ window.addEventListener('load', () => {
 
   function cacheRects() {
     visNames = []; visRects = [];
-    /* 基准必须是 tabbar 的"内容盒(padding 边)"左缘: 指示器的 CSS left 相对它, moveIndicator 写的
-       tab.offsetLeft 也相对它; 而 getBoundingClientRect 给的是边框盒 —— 差一个 border 宽度
-       (实测 ~0.7px)。差这 0.7px 会让边缘逻辑以为滑块一开始就出界, 用 3 倍刚度把它钉住,
-       点击切页起步那 ~150ms 的"爬"就是这么来的 */
+    /* 基准必须是 tabbar 的"内容盒(padding 边)"左缘: 指示器的 CSS left 相对它; 而
+       getBoundingClientRect 给的是边框盒 —— 差一个 border 宽度 (实测 ~0.7px)。
+       差这 0.7px 会让边缘逻辑以为滑块一开始就出界, 用 3 倍刚度把它钉住,
+       点击切页起步那 ~150ms 的"爬"就是这么来的。
+       ⚠️ visRects 存"布局坐标" (相对内容盒左缘, 已除掉 tabbar 自身变换): tabbar 入场动画
+       期间 (scale 0.92→1) rect 的相对距离全部 ×s, 不除掉的话目标/边界跟着缩水, 落定
+       写进 left 就是永久错位; tbLeft/tbScale 留作视口坐标→布局坐标的换算用 */
+    const s = tbSelfScale(tabbar);
+    const bw = parseFloat(getComputedStyle(tabbar).borderLeftWidth) || 0;
     const tbr = tabbar.getBoundingClientRect();
-    tbLeft = tbr.left + (parseFloat(getComputedStyle(tabbar).borderLeftWidth) || 0);
+    tbLeft = tbr.left + bw * s;
+    tbScale = s;
     for (const n of TAB_NAMES) {
       const el = document.getElementById('tab-' + n);
       if (!el) continue;
       const r = el.getBoundingClientRect();
       if (r.width < 1) continue;
       visNames.push(n);
-      visRects.push(r);
+      visRects.push({ left: (r.left - tbLeft) / s, right: (r.left + r.width - tbLeft) / s, width: r.width / s });
     }
   }
   function nearestIdx(x) {
@@ -140,12 +158,12 @@ window.addEventListener('load', () => {
     }
     return best;
   }
-  /* 根据手指 X 计算指示器连续位置 (插值只在可见 tab 之间, left/width 相对 tabbar) */
+  /* 根据手指 X (视口坐标) 计算指示器连续位置 (插值只在可见 tab 之间; 输出为布局坐标) */
   function indPosForX(x) {
     const n = visRects.length;
     if (!n) return null;
     const first = visRects[0], last = visRects[n - 1];
-    const cx = Math.max(first.left, Math.min(last.right, x));
+    const cx = Math.max(first.left, Math.min(last.right, (x - tbLeft) / tbScale));
 
     let best = lastBest;
     for (let i = 0; i < n; i++) {
@@ -170,7 +188,7 @@ window.addEventListener('load', () => {
     const at = Math.abs(t);
     const left  = targetRect ? cur.left  + (targetRect.left  - cur.left)  * at : cur.left;
     const width = targetRect ? cur.width + (targetRect.width - cur.width) * at : cur.width;
-    return { left: left - tbLeft, width, best };
+    return { left, width, best };
   }
   function setDegrade(lv) {
     if (lv === degrade) return;
@@ -234,8 +252,8 @@ window.addEventListener('load', () => {
            不锁的话滑块最终就落在里面那档而不是边缘档 (user 要求撞边后只留边缘页) */
         const locked = clickTab ? visNames.indexOf(clickTab) : -1;
         const idx = (sim.edgeTab !== null && sim.edgeTab !== undefined) ? sim.edgeTab
-          : (locked >= 0 ? locked : nearestIdx(tbLeft + sim.pos + sim.wid / 2));
-        sim.target  = visRects[idx].left  - tbLeft;
+          : (locked >= 0 ? locked : nearestIdx(sim.pos + sim.wid / 2));
+        sim.target  = visRects[idx].left;
         sim.targetW = visRects[idx].width;
         /* 宽度随飞行收敛 + 每帧按"当前宽度"重算栏边界:
            边缘钳位的平衡点 = 末档右缘 - 当前宽 —— 松手时宽度若比目标档宽 (拖动中
@@ -243,8 +261,8 @@ window.addEventListener('load', () => {
            4 秒超时才硬跳+切页 (点按最边缘档"落点稍偏/晚切页"的真凶)。
            宽度每帧向 targetW 收敛, 边界跟着收敛, 平衡点最终与落定目标重合 */
         if (degrade < 1) sim.wid = P.chase(sim.wid, sim.targetW);
-        sim.min = visRects[0].left - tbLeft;
-        sim.max = visRects[visRects.length - 1].right - tbLeft - sim.wid;
+        sim.min = visRects[0].left;
+        sim.max = visRects[visRects.length - 1].right - sim.wid;
         const k = degrade >= 3 ? P.FLIGHT_K * 4 : P.FLIGHT_K;
         let c = degrade >= 3 ? P.FLIGHT_C * 2 : P.FLIGHT_C;
         /* 端点不做着陆制动: 到达端点档的剩余动量自然冲进边缘缓冲 —— 深度/减速时长
@@ -325,7 +343,7 @@ window.addEventListener('load', () => {
     /* 撞过边缘的飞行: 落定档直接取锁定的边缘档 (user: 撞边后最终只留在边缘的那个页面);
        位置此刻就在边缘档上, nearestIdx 也只会给出它 —— 显式取值只是把意图写明 */
     const landIdx = (sim.edgeTab !== null && sim.edgeTab !== undefined)
-      ? sim.edgeTab : nearestIdx(tbLeft + sim.pos + sim.wid / 2);
+      ? sim.edgeTab : nearestIdx(sim.pos + sim.wid / 2);
     sim.edgeTab = null;
     const landTab = visNames[landIdx];
     if (landTab && landTab !== TAB_NAMES[_curTab]) switchTab(landTab);
@@ -336,8 +354,8 @@ window.addEventListener('load', () => {
     mode = 'flight'; flTries = 0; shrinkStarted = false; sim.edgeOn = false; sim.edgeTab = null;
     sim.vel = vpx;                       /* px/s, 甩动力度直接进弹簧 */
     sim.over = P.EDGE_OVER_MIN;          /* 边缘缓冲深度: 启用瞬间按力度重折算 (14~24px) */
-    sim.min = visRects[0].left - tbLeft;
-    sim.max = visRects[visRects.length - 1].right - tbLeft - sim.wid;
+    sim.min = visRects[0].left;
+    sim.max = visRects[visRects.length - 1].right - sim.wid;
   }
 
   function gestureStart(tx, ty, ts) {
@@ -363,8 +381,8 @@ window.addEventListener('load', () => {
       baseLeft = isFinite(curL) ? curL : (actG ? actG.left : 0);
       const baseW = (isFinite(curW) && curW > 0) ? curW : (actG ? actG.width : ir.width);
       sim = { pos: baseLeft, wid: baseW, vel: 0, target: baseLeft, targetW: baseW,
-              min: visRects[0].left - tbLeft,
-              max: visRects[visRects.length - 1].right - tbLeft - baseW, over: P.EDGE_OVER_MIN, edgeOn: false, edgeTab: null };
+              min: visRects[0].left,
+              max: visRects[visRects.length - 1].right - baseW, over: P.EDGE_OVER_MIN, edgeOn: false, edgeTab: null };
       ind.style.transition = IND_SCALE_T;   /* 位置冻结要瞬时, 放大走独立 scale 过渡 */
       ind.style.left = baseLeft + 'px';
       ind.classList.add('grabbed');
@@ -384,8 +402,8 @@ window.addEventListener('load', () => {
          它的收尾 click 仍会走正常点按切页 */
       if (!sim) return;
       dragging = true; _tabbarDragging = true; mode = 'drag';
-      sim.min = visRects[0].left - tbLeft;
-      sim.max = visRects[visRects.length - 1].right - tbLeft - sim.wid;
+      sim.min = visRects[0].left;
+      sim.max = visRects[visRects.length - 1].right - sim.wid;
       sim.over = P.EDGE_OVER_MIN;   /* 拖动允许把滑块带出端点最多一个缓冲区 ("拖动稍微超过边缘") */
       ind.style.transition = IND_SCALE_T;   /* 拖拽中位置/宽度跟手要瞬时, 缩放保持弹性 */
       ind.classList.add('grabbed');
@@ -400,11 +418,12 @@ window.addEventListener('load', () => {
     if (!pos) return;
     sim.target = pos.left; sim.targetW = pos.width;
     /* 拖出端点的部分: 目标允许越过端点最多 over (缓冲区) —— 松手后低速由弹簧拉回档位,
-       高速才由边缘缓冲减速回弹 (EDGE_V_GATE 门限) */
+       高速才由边缘缓冲减速回弹 (EDGE_V_GATE 门限)。visRects 是布局坐标, cx 先换算 */
     if (visRects.length) {
+      const lx = (cx - tbLeft) / tbScale;
       const lastR = visRects[visRects.length - 1], firstR = visRects[0];
-      if (cx > lastR.right) sim.target = Math.min(sim.max + sim.over, sim.target + (cx - lastR.right));
-      else if (cx < firstR.left) sim.target = Math.max(sim.min - sim.over, sim.target - (firstR.left - cx));
+      if (lx > lastR.right) sim.target = Math.min(sim.max + sim.over, sim.target + (lx - lastR.right));
+      else if (lx < firstR.left) sim.target = Math.max(sim.min - sim.over, sim.target - (firstR.left - lx));
     }
     if (pos.best !== lastBest) { lastBest = pos.best; haptic(6); }
     startLoop(ts || performance.now());
@@ -422,7 +441,7 @@ window.addEventListener('load', () => {
         _suppressClick = true;   /* 轻点滑块不是"点标签", 收尾 click 不再触发页面切换 */
         let landTab = null;
         if (sim && visRects.length) {
-          const li = nearestIdx(tbLeft + sim.pos + sim.wid / 2);
+          const li = nearestIdx(sim.pos + sim.wid / 2);
           landTab = visNames[li] || null;
         }
         /* 收尾同样走 FLIP 顺序: 先把"当前视觉位置"固化成 left/width 再清 translate ——
@@ -535,8 +554,8 @@ window.addEventListener('load', () => {
     const curW = parseFloat(ind.style.width);
     const baseW = (isFinite(curW) && curW > 0) ? curW : (g0 ? g0.width : el.offsetWidth);
     sim = { pos: baseLeft, wid: baseW, vel: 0, target: baseLeft, targetW: baseW,
-            min: visRects[0].left - tbLeft,
-            max: visRects[visRects.length - 1].right - tbLeft - baseW, over: P.EDGE_OVER_MIN, edgeOn: false, edgeTab: null };
+            min: visRects[0].left,
+            max: visRects[visRects.length - 1].right - baseW, over: P.EDGE_OVER_MIN, edgeOn: false, edgeTab: null };
     ind.style.transition = IND_SCALE_T;   /* 位置瞬时接管, 放大走弹性 scale */
     ind.style.left = baseLeft + 'px';
     ind.style.translate = '0px';
@@ -554,7 +573,7 @@ window.addEventListener('load', () => {
     /* 缩放已提前收但新目标还很远: 重新放大, 收尾时序作废 (由新一段飞行重算) */
     if (shrinkStarted && sim && visRects.length) {
       const li = visNames.indexOf(name);
-      if (li >= 0 && Math.abs(sim.pos - (visRects[li].left - tbLeft)) > 24) {
+      if (li >= 0 && Math.abs(sim.pos - visRects[li].left) > 24) {
         shrinkStarted = false;
         ind.classList.add('grabbed');
       }
@@ -652,7 +671,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '114a-20261005';
+  window._webuiBuild = '114b-20261005';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */
