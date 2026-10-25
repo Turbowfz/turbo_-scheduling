@@ -19,13 +19,30 @@ function refreshWhenIdle(fn, delay) {
   }, delay || 0);
 }
 
+/* 档位真实几何 (浮点): 基准 = tabbar 内容盒左缘 (与拖拽/飞行的 visRects 同一套数学)。
+   全部落位/校正写它 —— offsetLeft/offsetWidth 是四舍五入的整数, 与飞行的浮点落定值混用
+   会差出 ~1px, 而落定后样式表的 left/width 过渡是活的, 这 ~1px 会被放大成一次
+   0.38s 的弹性漂移 ("落定后过一下又挪一下"的元凶) */
+function tabGeom(name) {
+  const el = document.getElementById('tab-' + name);
+  const bar = document.getElementById('tabbar');
+  if (!el || !bar || el.offsetWidth < 1) return null;
+  const bl = bar.getBoundingClientRect().left + (parseFloat(getComputedStyle(bar).borderLeftWidth) || 0);
+  const r = el.getBoundingClientRect();
+  return { left: r.left - bl, width: r.width };
+}
 function moveIndicator(tabEl) {
   if (_tabbarDragging || _indFrozen) return;
   const ind = document.getElementById('tab-indicator');
   if (!ind || !tabEl) return;
+  const g = tabGeom(tabEl.id.replace(/^tab-/, ''));
+  if (!g) return;
+  /* 已在位 (<0.1px) 就不重写: 落定后的同值写入也会触发样式表过渡做无用功 */
+  const cl = parseFloat(ind.style.left), cw = parseFloat(ind.style.width);
+  if (Math.abs(cl - g.left) < 0.1 && Math.abs(cw - g.width) < 0.1) return;
 
-  try { (window.__navLog = window.__navLog || []).push(Math.round(performance.now()) + ' moveInd tab=' + tabEl.id + ' offL=' + tabEl.offsetLeft + ' offW=' + tabEl.offsetWidth + ' tbLeft=' + document.getElementById('tabbar').getBoundingClientRect().left.toFixed(1) + ' indRectL=' + ind.getBoundingClientRect().left.toFixed(1)); } catch (_) {}  ind.style.left  = tabEl.offsetLeft + 'px';
-  ind.style.width = tabEl.offsetWidth + 'px';
+  try { (window.__navLog = window.__navLog || []).push(Math.round(performance.now()) + ' moveInd tab=' + tabEl.id + ' L=' + g.left.toFixed(2) + ' W=' + g.width.toFixed(2) + ' tbLeft=' + document.getElementById('tabbar').getBoundingClientRect().left.toFixed(1) + ' indRectL=' + ind.getBoundingClientRect().left.toFixed(1)); } catch (_) {}  ind.style.left  = g.left  + 'px';
+  ind.style.width = g.width + 'px';
 }
 /* 只带 scale 的过渡串: 拖拽/飞行期间位置相关属性 (left/width/translate) 必须瞬时生效,
    缩放单独走弹性回弹。曲线要与样式表 .tab-indicator 的 scale 过渡一致 (改一处要同步另一处) */
@@ -206,8 +223,15 @@ window.addEventListener('load', () => {
       else if (frameAvg < 17 && degrade > 0) setDegrade(degrade - 1);
 
       if (mode === 'drag') {
-        sim.pos = P.chase(sim.pos, sim.target);
+        /* 拖动 = 弹簧追手指 (非线性): 快划时滞后被拉开、停手瞬间带着速度冲过手指一点
+           再弹回 —— 冲量随手速自然缩放; 慢移时几乎贴手。宽度不参与冲量, 走阻尼插值。
+           出界硬钳在 [min-over, max+over]: 弹簧过头不许越过"拖动稍微出界"的缓冲深度 */
+        P.step(sim, dt, P.DRAG_SK, P.DRAG_SC);
+        const lo = sim.min - sim.over, hi = sim.max + sim.over;
+        if (sim.pos < lo) { sim.pos = lo; if (sim.vel < 0) sim.vel = 0; }
+        if (sim.pos > hi) { sim.pos = hi; if (sim.vel > 0) sim.vel = 0; }
         sim.wid = P.chase(sim.wid, sim.targetW);
+        if (mode === 'drag' && (window.__dF = (window.__dF || 0) + 1) <= 70) dbg('D' + window.__dF + ' pos=' + sim.pos.toFixed(2) + ' vel=' + sim.vel.toFixed(0) + ' tgt=' + sim.target.toFixed(1) + ' tgtW=' + sim.targetW.toFixed(1));
         render();
       } else if (mode === 'flight') {
         /* 飞行目标: 点击滑行锁定到点中的那一档 (移动中改点只换锁 —— 同向直接追过去,
@@ -221,6 +245,14 @@ window.addEventListener('load', () => {
         if (window.__lastTgt !== idx || window.__lastLock !== locked) { window.__lastTgt = idx; window.__lastLock = locked; dbg('flight tgt=' + idx + ' locked=' + locked + ' pos=' + sim.pos.toFixed(1) + ' lock=' + clickTab + ' edge=' + (sim.edgeOn ? 1 : 0)); }
         sim.target  = visRects[idx].left  - tbLeft;
         sim.targetW = visRects[idx].width;
+        /* 宽度随飞行收敛 + 每帧按"当前宽度"重算栏边界:
+           边缘钳位的平衡点 = 末档右缘 - 当前宽 —— 松手时宽度若比目标档宽 (拖动中
+           从宽档过来), 平衡点会比末档左缘短一截, 弹簧永远到不了落定阈值 → 干等
+           4 秒超时才硬跳+切页 (点按最边缘档"落点稍偏/晚切页"的真凶)。
+           宽度每帧向 targetW 收敛, 边界跟着收敛, 平衡点最终与落定目标重合 */
+        if (degrade < 1) sim.wid = P.chase(sim.wid, sim.targetW);
+        sim.min = visRects[0].left - tbLeft;
+        sim.max = visRects[visRects.length - 1].right - tbLeft - sim.wid;
         const k = degrade >= 3 ? P.FLIGHT_K * 4 : P.FLIGHT_K;
         let c = degrade >= 3 ? P.FLIGHT_C * 2 : P.FLIGHT_C;
         /* 端点不做着陆制动: 到达端点档的剩余动量自然冲进边缘缓冲 —— 深度/减速时长
@@ -272,7 +304,9 @@ window.addEventListener('load', () => {
       ind.style.translate = '';
       ind.classList.remove('grabbed');
       const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
-      if (actEl) { ind.style.transition = ''; ind.style.left = actEl.offsetLeft + 'px'; ind.style.width = actEl.offsetWidth + 'px'; }
+      const actG = tabGeom(TAB_NAMES[_curTab]);
+      if (actG) { ind.style.transition = ''; ind.style.left = actG.left + 'px'; ind.style.width = actG.width + 'px'; }
+      else if (actEl) { ind.style.transition = ''; ind.style.left = actEl.offsetLeft + 'px'; ind.style.width = actEl.offsetWidth + 'px'; }
       stopLoop();
       return;
     }
@@ -310,6 +344,7 @@ window.addEventListener('load', () => {
 
   /* 释放入弹簧: 初速决定滑行距离 (无档位上限), 目标每帧跟随最近档, 边缘缓冲负责拦住 */
   function beginFlight(vpx) {
+    dbg('beginFlight v=' + vpx.toFixed(0));
     mode = 'flight'; flTries = 0; shrinkStarted = false; sim.edgeOn = false; sim.edgeTab = null;
     sim.vel = vpx;                       /* px/s, 甩动力度直接进弹簧 */
     sim.over = P.EDGE_OVER_MIN;          /* 边缘缓冲深度: 启用瞬间按力度重折算 (14~24px) */
@@ -336,11 +371,11 @@ window.addEventListener('load', () => {
       /* 抓取态不能用 getBoundingClientRect 当布局值 (含 scale(1.28) 缩放), 也不能只读
          inline left (飞行中它停在抓取前的值, 位移在 transform 里) —— 必须用视觉位置初始化,
          否则抓取瞬间位置会跳变 (曾把滑块瞬移回拖动前的位置) */
-      const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
+      const actG = tabGeom(TAB_NAMES[_curTab]);
       const curL = visualLeft();
       const curW = parseFloat(ind.style.width);
-      baseLeft = isFinite(curL) ? curL : (actEl ? actEl.offsetLeft : 0);
-      const baseW = (isFinite(curW) && curW > 0) ? curW : (actEl ? actEl.offsetWidth : ir.width);
+      baseLeft = isFinite(curL) ? curL : (actG ? actG.left : 0);
+      const baseW = (isFinite(curW) && curW > 0) ? curW : (actG ? actG.width : ir.width);
       sim = { pos: baseLeft, wid: baseW, vel: 0, target: baseLeft, targetW: baseW,
               min: visRects[0].left - tbLeft,
               max: visRects[visRects.length - 1].right - tbLeft - baseW, over: P.EDGE_OVER_MIN, edgeOn: false, edgeTab: null };
@@ -358,10 +393,14 @@ window.addEventListener('load', () => {
       if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
       intentDecided = true;
       if (Math.abs(dy) > Math.abs(dx) * 1.2) return;   /* 纵向, 放弃 */
+      /* sim 只在"按住滑块"时创建 —— 从栏上其它位置起手横滑没有 sim, 对它写入会抛异常
+         且把 _tabbarDragging 永久卡死 (moveIndicator 从此被挡)。这种手势直接忽略,
+         它的收尾 click 仍会走正常点按切页 */
+      if (!sim) return;
       dragging = true; _tabbarDragging = true; mode = 'drag';
       sim.min = visRects[0].left - tbLeft;
       sim.max = visRects[visRects.length - 1].right - tbLeft - sim.wid;
-      sim.over = 14;   /* 拖动允许把滑块带出端点最多一个缓冲区 ("拖动稍微超过边缘") */
+      sim.over = P.EDGE_OVER_MIN;   /* 拖动允许把滑块带出端点最多一个缓冲区 ("拖动稍微超过边缘") */
       ind.style.transition = IND_SCALE_T;   /* 拖拽中位置/宽度跟手要瞬时, 缩放保持弹性 */
       ind.classList.add('grabbed');
       haptic(10);
@@ -416,15 +455,17 @@ window.addEventListener('load', () => {
         if (landTab && landTab !== TAB_NAMES[_curTab]) {
           switchTab(landTab);    /* 就近落档: 目标位置由 switchTab 写, 滑块弹滑过去 */
         } else {
-          const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
-          if (actEl) { ind.style.left = actEl.offsetLeft + 'px'; ind.style.width = actEl.offsetWidth + 'px'; }
+          const actG = tabGeom(TAB_NAMES[_curTab]);
+          if (actG) { ind.style.left = actG.left + 'px'; ind.style.width = actG.width + 'px'; }
         }
       }
       mode = 'idle';
       return;
     }
     /* 甩动速度: 最近两次 move (px/ms → px/s); 时间窗 120ms 外视为静止。
-       初速直接进弹簧 —— 甩出距离由力度决定; 上限防事件时间戳抖动算出的假速度
+       (sim 为 null = 从栏上其它位置起手的横滑, 上面已忽略拖动, 这里同样直接收尾) */
+    if (!sim) { mode = 'idle'; return; }
+    /* 初速直接进弹簧 —— 甩出距离由力度决定; 上限防事件时间戳抖动算出的假速度
        (两帧落在同一毫秒会算出几万 px/s, 把弹簧打进不稳定区) */
     let v = 0;
     if (lastT && prevT && lastT - prevT > 0 && lastT - prevT < 120) {
@@ -487,12 +528,12 @@ window.addEventListener('load', () => {
   window.syncTabIndicator = function () {
     cacheRects();
     if (mode !== 'idle' || _indFrozen || _tabbarDragging) return;
-    const actEl = document.getElementById('tab-' + TAB_NAMES[_curTab]);
-    if (!actEl || !visNames.length) return;
+    const actG = tabGeom(TAB_NAMES[_curTab]);
+    if (!actG || !visNames.length) return;
     ind.style.transition = 'none';
     ind.style.translate = '';
-    ind.style.left = actEl.offsetLeft + 'px';
-    ind.style.width = actEl.offsetWidth + 'px';
+    ind.style.left = actG.left + 'px';
+    ind.style.width = actG.width + 'px';
     void ind.offsetWidth;
     ind.style.transition = '';
   };
@@ -508,9 +549,10 @@ window.addEventListener('load', () => {
     mode = 'idle';
     const lv = parseFloat(ind.style.left);
     const curL = visualLeft();
-    baseLeft = isFinite(lv) ? curL : el.offsetLeft;   /* 内联 left 还没写过时退回该档真实位置 */
+    const g0 = tabGeom(name);
+    baseLeft = isFinite(lv) ? curL : (g0 ? g0.left : el.offsetLeft);   /* 内联 left 还没写过时退回该档真实位置 (浮点) */
     const curW = parseFloat(ind.style.width);
-    const baseW = (isFinite(curW) && curW > 0) ? curW : el.offsetWidth;
+    const baseW = (isFinite(curW) && curW > 0) ? curW : (g0 ? g0.width : el.offsetWidth);
     sim = { pos: baseLeft, wid: baseW, vel: 0, target: baseLeft, targetW: baseW,
             min: visRects[0].left - tbLeft,
             max: visRects[visRects.length - 1].right - tbLeft - baseW, over: P.EDGE_OVER_MIN, edgeOn: false, edgeTab: null };
@@ -632,7 +674,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '112g-20261003';
+  window._webuiBuild = '113c-20261005';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */

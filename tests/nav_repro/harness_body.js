@@ -17,6 +17,10 @@ NAMES.forEach(n => byName[n] = document.getElementById('tab-' + n));
    否则它还是按 2 档布局放置的 (宽 183), 与被测状态对不上 */
 if (P.showAllTabs) {
   NAMES.forEach(n => { const e = byName[n]; if (e && e.style.display === 'none') e.style.display = ''; });
+}
+/* 每轮强制把滑块归位到起始档: 同页多轮运行时上一轮的落定位置不是 tabFrom,
+   dragstop 等模式的 x0 是按 tabFrom 算的 —— 不归位则起手不在滑块上, sim 为 null */
+if (P.showAllTabs || P.reseat) {
   const first = byName[P.tabFrom || 'status'];
   if (first) {
     ind.style.transition = 'none';
@@ -121,6 +125,7 @@ const burstDelay = (P.burstDelay === undefined) ? 20 : P.burstDelay;
 const relStep = () => ((ind.getBoundingClientRect().left + ind.getBoundingClientRect().width / 2) - tb.getBoundingClientRect().left).toFixed(1);
 let burstTarget = '(none)';
 const tapSteps = [], pressSteps = [], relSteps = [];
+let stopMark = null, stopRelX = null;   /* dragstop: 手指停住的时刻与停点(相对tabbar) */
 
 if (P.mode === 'tap') {
   /* 点按已改走 JS 弹簧: 实时采样即可取到过程 (手动推动画时钟会把 scale 过渡快进, 反而失真) */
@@ -184,6 +189,26 @@ if (P.mode === 'tap') {
     touchEv('touchend', edgeX + 60, y);
     await sleep(2000);
   }
+} else if (P.mode === 'dragstop') {
+  /* 快拖急停: 快速拖到 from→to 的 55% 处后按住不动 (手指停但没松) —— 期望:
+     ①拖动中滑块滞后于手指 (弹簧跟随, 滞后随手速拉开)
+     ②手指停后滑块带着冲量越过停点一点 (过头) 再弹回停点
+     ③之后松手就近落档, 无闪跳 */
+  const stopX = x0 + (x1 - x0) * 0.55;
+  const moves = P.steps || 6, durMs = P.durMs || 150;   /* 快拖: 150ms 走完这段 */
+  touchEv('touchstart', x0, y);
+  await sleep(30);
+  for (let i = 1; i <= moves; i++) {
+    await sleep(durMs / moves);
+    touchEv('touchmove', x0 + (stopX - x0) * (i / moves), y);
+  }
+  /* stopMark 必须在等待之前记: 它是"手指停住"的时刻 (等待 900ms 后才松手,
+     记晚了会把松手后的落档飞行当成按住期) */
+  stopMark = performance.now() - t0;
+  stopRelX = +(stopX - tb.getBoundingClientRect().left).toFixed(1);
+  await sleep(900);   /* 手指停住按 900ms, 单看拖动弹簧的冲量回落 */
+  touchEv('touchend', stopX, y);
+  await sleep(800);
 } else if (P.mode === 'intercept') {
   /* 甩动 → 飞行途中按住滑块截停 → 原地松手 (就近落档) */
   touchEv('touchstart', x0, y);
@@ -332,10 +357,34 @@ const retargetOk = stable && ri >= 0 && shrinkWhileMoving <= 3   /* ≤3 个采�
   && (shrinkResidual <= 1.5 || shrinkEarly)
   && (P.expectRebound ? (rebound !== null && rebound > 3) : true);
 const dragOkEarly = dragOk && (P.mode === 'drag' ? (shrinkResidual <= 1.5 || shrinkEarly) : true);
+/* dragstop 量化: 停点前样本测"滞后" (手指-滑块), 停点后测"过头冲量"与"回落" */
+let dsLag = 0, dsOver = 0, dsBack = null, dsNaN = false;
+if (P.mode === 'dragstop' && stopMark !== null && stopRelX !== null) {
+  /* 布局中心 = inline left + translate + width/2 —— 不含 grabbed 的 1.28 缩放
+     (rect 中心在缩放/回弹期间会漂移, 是测量噪声不是滑块在动) */
+  const lc = s => (parseFloat(s.il) || 0) + (parseFloat(s.tr) || 0) + (parseFloat(s.iw) || 0) / 2;
+  const moveStart = S.length ? S[0].t : 0;
+  const moveEnd = stopMark;    /* move 段结束 = 手指停住 = stopMark */
+  for (const s of S) {
+    const v = lc(s);
+    if (!isFinite(v)) { dsNaN = true; continue; }
+    if (s.t <= moveEnd && s.t >= moveStart + 30) {
+      const f = (s.t - moveStart - 30) / Math.max(1, moveEnd - moveStart - 30);
+      const fingerRel = f * stopRelX;   /* 起点 x0 ≈ 0 (基准档中心) */
+      dsLag = Math.max(dsLag, fingerRel - v);
+    }
+    if (s.t > stopMark && s.t < stopMark + 870) dsOver = Math.max(dsOver, v - stopRelX);
+  }
+  /* 回落只看"按住不放"的 900ms 窗口: 松手后飞向最近档是设计行为, 不算没回到停点 */
+  const hold = S.filter(s => s.t > stopMark && s.t < stopMark + 870);
+  if (hold.length) dsBack = +(lc(hold[hold.length - 1]) - stopRelX).toFixed(2);
+}
+const dragstopOk = P.mode === 'dragstop' ? (stable && !dsNaN && dsLag >= 3 && dsLag <= 130
+  && dsOver >= 1 && dsOver <= 40 && Math.abs(dsBack) < 4 && flash === 0) : null;
 
 return JSON.stringify({
-  ok: (P.mode === 'tap' ? tapOk : (P.mode === 'scaleanim' ? scaleOk
-    : (P.mode === 'retarget' ? retargetOk : (P.mode === 'flick' ? flickOk : (P.mode === 'dragout' ? dragoutOk : dragOkEarly))))),
+  ok: (P.mode === 'tap' ? tapOk : (P.mode === 'dragstop' ? dragstopOk : (P.mode === 'scaleanim' ? scaleOk
+    : (P.mode === 'retarget' ? retargetOk : (P.mode === 'flick' ? flickOk : (P.mode === 'dragout' ? dragoutOk : dragOkEarly)))))),
   stable, uniq, flash, flashAt, peak: +peak.toFixed(2), finalFrac,
   landed, under, grabbedSamples, grabbedAtEnd: ind.classList.contains('grabbed'),
   burstTarget, baseC: +baseC.toFixed(1), targetC: +targetC.toFixed(1), finalC: last.c,
@@ -344,6 +393,7 @@ return JSON.stringify({
   targetCend: targetCend === undefined ? null : +targetCend.toFixed(1),
   retargetIdx: ri, rebound, shrinkWhileMoving, movingSamples: moving.length, shrinkEarly, firstRel,
   overhangR, endLeftRel: +endLeftRel.toFixed(1),
+  dsLag: +dsLag.toFixed(1), dsOver: +dsOver.toFixed(1), dsBack, stopMark, stopRelX,
   settleAt, postMove, totalMs: last.t,
   shrinkStart: shStart, shrinkEnd: shEnd, shrinkDur, shrinkCfgDur, shrinkCfgAt, shrinkAlign, shrinkResidual,
   c2rel: c2rel === undefined ? null : +c2rel.toFixed(1),

@@ -1,13 +1,18 @@
 /* spring_test: 验证 physics.js 的弹簧/边缘物理与 nav.js 使用方式一致。
    纯 node 运行 (physics.js 只挂 window.tPhysics, 无 DOM 依赖)。
-   断言: 弹簧收敛、甩向端点的缓冲深度随力度递增且有硬上限、回弹小、
-   最终留在端点档、低速自然回落、拖出边缘松手回弹、全程无 NaN。 */
+   断言: 飞行收敛、先快后慢的速度分布、甩向端点的缓冲深度随力度递增且有硬上限、
+   回弹小、最终留在端点档、低速自然回落、拖出边缘松手回弹、
+   拖动弹簧 (快划滞后/停手过头冲量/慢移贴手/出界硬钳)、全程无 NaN。 */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 
+/* 模块目录 = 版本号最大的那个 模块/Turbo调度* (与 module_check.js 同规则, 轮替免改路径) */
+const MODNAME = fs.readdirSync(path.join(__dirname, '..', '模块'))
+  .filter(d => /^Turbo调度\d+/.test(d))
+  .sort((a, b) => parseInt(b.replace(/\D/g, ''), 10) - parseInt(a.replace(/\D/g, ''), 10))[0];
 global.window = {};
-const code = fs.readFileSync(path.join(__dirname, '..', '模块', 'Turbo调度26.113', 'webroot', 'physics.js'), 'utf8');
+const code = fs.readFileSync(path.join(__dirname, '..', '模块', MODNAME, 'webroot', 'physics.js'), 'utf8');
 eval(code);
 const P = window.tPhysics;
 if (!P) { console.error('FAIL physics.js 未挂载 tPhysics'); process.exit(1); }
@@ -134,6 +139,68 @@ for (const v of [100, 800, 2000, 4000, 8000]) {
   const rr = simFlight(v);
   if (rr.path.every(x => isFinite(x))) ok('v=' + v + ' 全程数值有限'); else bad('v=' + v + ' 出现 NaN/Infinity');
 }
+
+/* 7) 飞行速度分布"先快后慢": 前半路程耗时 < 后半路程耗时, 且不对称比比旧常数 (60/11) 更悬殊 */
+(function () {
+  const halfAsym = (K, C) => {
+    const st = { pos: 50, vel: 1400, target: MAX, min: MIN, max: MAX, over: 0, edgeOn: false };
+    const dt = 1 / 60; const half = 50 + (MAX - 50) / 2; let tHalf = null;
+    for (let i = 0; i < 600; i++) {
+      P.step(st, dt, K, C);
+      if (tHalf === null && st.pos >= half) tHalf = i * dt;
+      if (Math.abs(st.vel) < P.SETTLE_V && Math.abs(st.pos - st.target) < P.SETTLE_X) return { tHalf, tAll: i * dt };
+    }
+    return { tHalf, tAll: 600 * dt };
+  };
+  const oldA = halfAsym(60, 11), newA = halfAsym(P.FLIGHT_K, P.FLIGHT_C);
+  const ratioNew = newA.tHalf / newA.tAll, ratioOld = oldA.tHalf / oldA.tAll;
+  if (newA.tHalf < newA.tAll * 0.45) ok('前半程快后半程慢 (前半仅占 ' + (ratioNew * 100).toFixed(0) + '% 时间)'); else bad('速度分布不够"先快后慢": ' + (ratioNew * 100).toFixed(0) + '%');
+  if (ratioNew < ratioOld) ok('比旧常数更先快后慢 (旧 ' + (ratioOld * 100).toFixed(0) + '% → 新 ' + (ratioNew * 100).toFixed(0) + '%)'); else bad('不对称比未提升: ' + (ratioOld * 100).toFixed(0) + '% → ' + (ratioNew * 100).toFixed(0) + '%');
+  if (newA.tAll < 1.2) ok('总收敛时长可接受 (' + newA.tAll.toFixed(2) + 's)'); else bad('收敛太慢: ' + newA.tAll.toFixed(2) + 's');
+})();
+
+/* 8) 拖动弹簧 (nav.js drag 分支同款: step + 出界硬钳 [min-over, max+over], 宽度走 chase):
+   a) 快划: 滞后被拉开 (滑块速度跟不上手指) —— 非线性感来源之一
+   b) 快划中急停: 滑块带冲量越过停点 (过头) 再弹回 —— user 要的"快时带点过头冲量"
+   c) 慢移: 稳态误差小 (贴手)
+   d) 拖到边缘外: 硬钳在 over 深度, 不飞出 */
+(function () {
+  const dt = 1 / 60, OVER = P.EDGE_OVER_MIN;
+  /* 拖动跟随的坐标系与端点无关, 给足行程: 栏 [-400, 400], 滑块从 0 出发 */
+  const mk = () => ({ pos: 0, vel: 0, target: 0, min: -400, max: 400, over: OVER, edgeOn: false });
+  const dragStep = (st, tgt) => {
+    st.target = tgt;
+    P.step(st, dt, P.DRAG_SK, P.DRAG_SC);
+    const lo = st.min - st.over, hi = st.max + st.over;
+    if (st.pos < lo) { st.pos = lo; if (st.vel < 0) st.vel = 0; }
+    if (st.pos > hi) { st.pos = hi; if (st.vel > 0) st.vel = 0; }
+  };
+  /* a) 快划 1500px/s 持续 0.2s: 滞后应被拉开 (非线性感) */
+  let st = mk(); let maxLag = 0;
+  for (let i = 0; i < 12; i++) { const finger = 1500 * (i + 1) * dt; dragStep(st, finger); maxLag = Math.max(maxLag, finger - st.pos); }
+  if (maxLag >= 15 && maxLag <= 110) ok('快划滞后被拉开 (峰值滞后 ' + maxLag.toFixed(1) + 'px)'); else bad('快划滞后异常: ' + maxLag.toFixed(1) + 'px');
+  /* b) 快划急停: 过头量 > 2px 且最终回到停点附近 */
+  st = mk(); let stopped = false, overRun = 0, fingerStop = 0, settledAt = null;
+  for (let i = 0; i < 240; i++) {
+    let finger;
+    if (!stopped) { finger = 1500 * (i + 1) * dt; if (finger >= 300) { stopped = true; fingerStop = 300; } }
+    else finger = fingerStop;
+    dragStep(st, finger);
+    if (stopped) overRun = Math.max(overRun, st.pos - fingerStop);
+    if (stopped && Math.abs(st.pos - fingerStop) < 0.5 && Math.abs(st.vel) < 20) { settledAt = st.pos; break; }
+  }
+  if (overRun >= 2 && overRun <= 45) ok('急停带过头冲量 (过头 ' + overRun.toFixed(1) + 'px 后弹回)'); else bad('急停过头量异常: ' + overRun.toFixed(1) + 'px');
+  if (settledAt !== null && Math.abs(settledAt - fingerStop) < 1) ok('急停后回到手指停点 (Δ=' + Math.abs(settledAt - fingerStop).toFixed(2) + 'px)'); else bad('急停后未回到停点');
+  /* c) 慢移 120px/s: 稳态误差 */
+  st = mk(); let err = 0;
+  for (let i = 0; i < 40; i++) { const finger = 120 * (i + 1) * dt; dragStep(st, finger); err = Math.max(err, finger - st.pos); }
+  if (err <= 12) ok('慢移贴手 (最大误差 ' + err.toFixed(1) + 'px)'); else bad('慢移误差过大: ' + err.toFixed(1) + 'px');
+  /* d) 拖出右缘: 硬钳在 max+over */
+  st = mk(); let escaped = false;
+  for (let i = 0; i < 120; i++) { dragStep(st, 1500); if (st.pos > st.max + OVER + 0.5) { escaped = true; break; } }
+  if (!escaped && st.pos >= st.max - 1) ok('拖出右缘硬钳在缓冲深度 (' + (st.pos - st.max).toFixed(1) + ' ≤ ' + OVER + ')'); else bad('拖动出界未钳住: ' + st.pos.toFixed(1) + ' vs max+over=' + (st.max + OVER));
+  if (isFinite(st.pos) && isFinite(st.vel)) ok('拖动弹簧全程数值有限'); else bad('拖动弹簧出现 NaN');
+})();
 
 console.log('\n结果: 通过 ' + pass + ', 失败 ' + fail);
 process.exit(fail ? 1 : 0);

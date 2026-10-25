@@ -2,7 +2,7 @@
    源 = 当前(修复版) webroot/nav.js。输出 tests/nav_repro/nav_debug.js */
 const fs = require('fs');
 const path = require('path');
-const SRC = path.resolve(__dirname, '..', '..', '模块', 'Turbo调度26.113', 'webroot', 'nav.js');
+const SRC = path.resolve(__dirname, '..', '..', '模块', 'Turbo调度26.114', 'webroot', 'nav.js');
 const OUT = path.resolve(__dirname, 'nav_debug.js');
 
 let s = fs.readFileSync(SRC, 'utf8');
@@ -24,9 +24,9 @@ ins('        const curW = parseFloat(ind.style.width) || (sim ? sim.wid : 0);',
 ins('    const landTab = visNames[landIdx];',
     "\n    dbg('endFlight pos=' + sim.pos.toFixed(1) + ' landTab=' + landTab + ' cur=' + TAB_NAMES[_curTab]);");
 ins('    } catch (e) {', "\n      dbg('CATCH ' + e.message);");
-/* moveIndicator: 记录 offsetLeft/offsetWidth 写入值与取值来源 (检查坐标基准是否与拖拽用的 rect 一致) */
-ins("  ind.style.left  = tabEl.offsetLeft + 'px';",
-    "\n  try { (window.__navLog = window.__navLog || []).push(Math.round(performance.now()) + ' moveInd tab=' + tabEl.id + ' offL=' + tabEl.offsetLeft + ' offW=' + tabEl.offsetWidth + ' tbLeft=' + document.getElementById('tabbar').getBoundingClientRect().left.toFixed(1) + ' indRectL=' + ind.getBoundingClientRect().left.toFixed(1)); } catch (_) {}",
+/* moveIndicator: 记录落位写入值与取值来源 (tabGeom 浮点版) */
+ins("  ind.style.left  = g.left  + 'px';",
+    "\n  try { (window.__navLog = window.__navLog || []).push(Math.round(performance.now()) + ' moveInd tab=' + tabEl.id + ' L=' + g.left.toFixed(2) + ' W=' + g.width.toFixed(2) + ' tbLeft=' + document.getElementById('tabbar').getBoundingClientRect().left.toFixed(1) + ' indRectL=' + ind.getBoundingClientRect().left.toFixed(1)); } catch (_) {}",
     'before');
 /* 布局变化监听: 一旦 tabbar/tab 的 rect 在运行中变化, 就能看到 */
 ins('  const P = window.tPhysics;',
@@ -51,6 +51,10 @@ ins('          : (locked >= 0 ? locked : nearestIdx(tbLeft + sim.pos + sim.wid /
     "\n        if (window.__lastTgt !== idx || window.__lastLock !== locked) { window.__lastTgt = idx; window.__lastLock = locked; dbg('flight tgt=' + idx + ' locked=' + locked + ' pos=' + sim.pos.toFixed(1) + ' lock=' + clickTab + ' edge=' + (sim.edgeOn ? 1 : 0)); }");
 /* 松手速度与边缘状态: 查 NaN / 缓冲启用 */
 ins('    beginFlight(v);', "\n    dbg('onEnd v=' + v.toFixed(0) + ' pos=' + sim.pos.toFixed(1) + ' baseL=' + baseLeft.toFixed(1) + ' min=' + sim.min.toFixed(1) + ' max=' + sim.max.toFixed(1) + ' over=' + sim.over);");
+ins('  function beginFlight(vpx) {', "\n    dbg('beginFlight v=' + vpx.toFixed(0));");
+/* 拖动弹簧帧日志 (前 60 帧): 查停手后的过头/回落是否贴着手指停点 */
+ins('        sim.wid = P.chase(sim.wid, sim.targetW);',
+    "\n        if (mode === 'drag' && (window.__dF = (window.__dF || 0) + 1) <= 70) dbg('D' + window.__dF + ' pos=' + sim.pos.toFixed(2) + ' vel=' + sim.vel.toFixed(0) + ' tgt=' + sim.target.toFixed(1) + ' tgtW=' + sim.targetW.toFixed(1));");
 /* 飞行头几帧: 步长/速度/位置/弹簧参数 —— 用来查"起步慢"/NaN 这类异常 */
 ins('        P.step(sim, dt, k, c);',
     "\n        if (flTries < 10) dbg('F' + flTries + ' pos=' + sim.pos.toFixed(2) + ' vel=' + sim.vel.toFixed(0) + ' tgt=' + sim.target.toFixed(1) + ' k=' + k + ' c=' + c + ' edge=' + (sim.edgeOn ? 1 : 0) + ' min=' + sim.min.toFixed(1) + ' max=' + sim.max.toFixed(1) + ' over=' + sim.over + ' wid=' + sim.wid.toFixed(1) + ' baseL=' + baseLeft.toFixed(1));");
