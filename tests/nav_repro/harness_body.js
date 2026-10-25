@@ -345,8 +345,9 @@ let shrinkDur = (shStart !== null && shEnd !== null) ? shEnd - shStart : null;
 let shrinkCfgDur = null, shrinkCfgAt = null;
 if (shrinkDur === null) {
   for (const s of S) {
-    /* 浏览器会把过渡串规范化成 "cubic-bezier(0.7, 0, 0.84, 0.3)" (逗号后有空格) */
-    const m = /scale\s+([0-9.]+)s\s+cubic-bezier\(\s*\.?0?\.7\s*,\s*0\s*,\s*\.?0?\.84\s*,\s*\.?0?\.3\s*\)/.exec(s.it || '');
+    /* 缩小过渡串: 'scale <时长>s cubic-bezier(...)' —— 曲线不固定 (114d 起=前段加载
+       (.25,.6,.3,1), 更早是 ease-in), 只认 'scale Ns' 即可 */
+    const m = /scale\s+([0-9.]+)s\s+cubic-bezier/.exec(s.it || '');
     if (m) { shrinkCfgDur = Math.round(parseFloat(m[1]) * 1000); shrinkCfgAt = s.t; break; }
   }
 }

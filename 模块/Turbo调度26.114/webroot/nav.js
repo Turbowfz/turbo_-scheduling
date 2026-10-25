@@ -286,26 +286,30 @@ window.addEventListener('load', () => {
         /* 数值兜底: 任何 NaN/Infinity 都立即落定 (endFlight 写的是有限的目标值) */
         if (!isFinite(sim.pos) || !isFinite(sim.vel)) { endFlight(); return; }
         /* 缩放提前收 (需求: "移动中将停在这个图标上 → 停留之前就开始缩小, 缩小到原大
-           的瞬间刚好停住")。旧做法用衰减包络 ln(d/SETTLE)/(c/2) 估剩余时间 —— 只看距离
-           不看速度, 高速接近时第一次擦过目标就误判"快到了", 缩完还要荡 200~400ms。
-           现在尾段 (距目标 <80px) 用同一个积分器逐帧向前推演到"真正落定" (两条阈值都
-           满足, 含过冲回摆), 拿精确剩余时间 tS: ≤0.42s 就触发, 缩放时长 = tS (下限
-           0.12 保底可见 —— 宁可缩完比停住晚一拍, 也不许缩完了还在荡)。曲线后段加载
-           (ease-in): 尺寸变化集中在尾段, 收完的一刻就是静止点 */
+           的瞬间刚好停住")。尾段 (距目标 <80px) 用同一个积分器向前推演到"真正落定"
+           (两条阈值都满足, 含过冲回摆), 拿精确剩余时间 tS: ≤0.42s 触发, 时长=tS。
+           ⚠️ 推演必须用"固定小步长 + 时间视野" (1/120s × 72 步 = 0.6s), 不能按帧率走 ——
+           120Hz 屏每帧仅 ~8ms, 按帧数 (30 帧) 只能看 0.24s, 永远看不到远处的落定点,
+           前瞻从未触发, 表现成"到了才缩" (真机 v26.114c 的病根)。
+           曲线前段加载 (.25,.6,.3,1): 缩小在滑行途中就肉眼可见地推进 —— 旧 ease-in
+           (.7,0,.84,.3) 把尺寸变化压在最后一瞬, 位置早已 creep 到位, 视觉上就是
+           "先到地方再变小"。时长下限 0.12s 保底可见: 宁可缩完比停住晚一拍,
+           也不许缩完了还在荡 */
         if (!shrinkStarted) {
           const d = Math.abs(sim.pos - sim.target);
           if (d > P.SETTLE_X && d < 80) {
             let tS = -1;
+            const dtP = 1 / 120;                   /* 固定推演步长: 与帧率无关 */
             __la.pos = sim.pos; __la.vel = sim.vel; __la.target = sim.target;
             __la.min = sim.min; __la.max = sim.max; __la.over = sim.over; __la.edgeOn = sim.edgeOn;
-            for (let i = 0; i < 30; i++) {          /* 30 帧 ≈ 0.5s 前瞻预算 */
-              P.step(__la, dt, k, c);
-              if (Math.abs(__la.vel) < P.SETTLE_V && Math.abs(__la.pos - __la.target) < P.SETTLE_X) { tS = (i + 1) * dt; break; }
+            for (let i = 0; i < 72; i++) {         /* 72 步 ≈ 0.6s 前瞻视野 */
+              P.step(__la, dtP, k, c);
+              if (Math.abs(__la.vel) < P.SETTLE_V && Math.abs(__la.pos - __la.target) < P.SETTLE_X) { tS = (i + 1) * dtP; break; }
             }
             if (tS > 0 && tS <= 0.42) {
               shrinkStarted = true;
               const dur = Math.min(0.42, Math.max(0.12, tS)).toFixed(2);
-              ind.style.transition = 'scale ' + dur + 's cubic-bezier(.7,0,.84,.3)';
+              ind.style.transition = 'scale ' + dur + 's cubic-bezier(.25,.6,.3,1)';
               ind.classList.remove('grabbed');
             }
           }
@@ -679,7 +683,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '114c-20261005';
+  window._webuiBuild = '114d-20261005';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */
