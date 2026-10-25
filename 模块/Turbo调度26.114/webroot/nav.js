@@ -126,6 +126,7 @@ window.addEventListener('load', () => {
   let _suppressClick = false;   /* 拖动/飞行刚结束: 忽略紧随的 click (鼠标拖拽会额外触发一次) */
   let clickTab = null;          /* 点击滑行锁定的目标档 (null = 甩动飞行, 目标每帧取最近档) */
   let shrinkStarted = false;    /* 本次飞行已提前触发缩回 (grabbed 已摘, endFlight 里不必再摘) */
+  const __la = { pos: 0, vel: 0, target: 0, min: 0, max: 0, over: 0, edgeOn: false };  /* 缩小时机前瞻推演的复用状态 (免每帧建对象) */
 
   function cacheRects() {
     visNames = []; visRects = [];
@@ -284,22 +285,29 @@ window.addEventListener('load', () => {
         flTries++;
         /* 数值兜底: 任何 NaN/Infinity 都立即落定 (endFlight 写的是有限的目标值) */
         if (!isFinite(sim.pos) || !isFinite(sim.vel)) { endFlight(); return; }
-        /* 缩放提前收 (需求: "将要变为静止时开始缩小, 缩小结束时滑块刚好停止运动"):
-           弹簧包络按 e^(-c/2·t) 衰减, 用当前与目标的距离反推还要多久落定 (tRem);
-           进入最后一段 (≤0.26s) 就开始缩回, 且缩放过渡的"时长=剩余滑行时间"、
-           曲线用后段加载 (ease-in) —— 尺寸的变化集中在最后一段, 过渡结束的一刻
-           正好是静止点。用弹性曲线时视觉上 ~半程就已回到 1.0, 之后的位置滑行
-           看起来就像"缩小完了还在动" (user 复测指出的)。
-           0.26 / 下限 0.12: 收得干脆 (user: "缩小速度再快一点点"; 实测可见缩小耗时
-           由 ~230ms 降到 ~170ms, 而收完之后剩余位置位移 ≤1.5px, 察觉不到) */
+        /* 缩放提前收 (需求: "移动中将停在这个图标上 → 停留之前就开始缩小, 缩小到原大
+           的瞬间刚好停住")。旧做法用衰减包络 ln(d/SETTLE)/(c/2) 估剩余时间 —— 只看距离
+           不看速度, 高速接近时第一次擦过目标就误判"快到了", 缩完还要荡 200~400ms。
+           现在尾段 (距目标 <80px) 用同一个积分器逐帧向前推演到"真正落定" (两条阈值都
+           满足, 含过冲回摆), 拿精确剩余时间 tS: ≤0.42s 就触发, 缩放时长 = tS (下限
+           0.12 保底可见 —— 宁可缩完比停住晚一拍, 也不许缩完了还在荡)。曲线后段加载
+           (ease-in): 尺寸变化集中在尾段, 收完的一刻就是静止点 */
         if (!shrinkStarted) {
           const d = Math.abs(sim.pos - sim.target);
-          const tRem = Math.log(d / P.SETTLE_X) / (c / 2);
-          if (d > P.SETTLE_X && tRem <= 0.26) {
-            shrinkStarted = true;
-            const dur = Math.min(0.26, Math.max(0.12, tRem)).toFixed(2);
-            ind.style.transition = 'scale ' + dur + 's cubic-bezier(.7,0,.84,.3)';
-            ind.classList.remove('grabbed');
+          if (d > P.SETTLE_X && d < 80) {
+            let tS = -1;
+            __la.pos = sim.pos; __la.vel = sim.vel; __la.target = sim.target;
+            __la.min = sim.min; __la.max = sim.max; __la.over = sim.over; __la.edgeOn = sim.edgeOn;
+            for (let i = 0; i < 30; i++) {          /* 30 帧 ≈ 0.5s 前瞻预算 */
+              P.step(__la, dt, k, c);
+              if (Math.abs(__la.vel) < P.SETTLE_V && Math.abs(__la.pos - __la.target) < P.SETTLE_X) { tS = (i + 1) * dt; break; }
+            }
+            if (tS > 0 && tS <= 0.42) {
+              shrinkStarted = true;
+              const dur = Math.min(0.42, Math.max(0.12, tS)).toFixed(2);
+              ind.style.transition = 'scale ' + dur + 's cubic-bezier(.7,0,.84,.3)';
+              ind.classList.remove('grabbed');
+            }
           }
         }
         const settled = Math.abs(sim.vel) < P.SETTLE_V && Math.abs(sim.pos - sim.target) < P.SETTLE_X;
@@ -671,7 +679,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '114b-20261005';
+  window._webuiBuild = '114c-20261005';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */

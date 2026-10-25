@@ -140,7 +140,8 @@ for (const v of [100, 800, 2000, 4000, 8000]) {
   if (rr.path.every(x => isFinite(x))) ok('v=' + v + ' 全程数值有限'); else bad('v=' + v + ' 出现 NaN/Infinity');
 }
 
-/* 7) 飞行速度分布"先快后慢": 前半路程耗时 < 后半路程耗时, 且不对称比比旧常数 (60/11) 更悬殊 */
+/* 7) 飞行速度分布"先快后慢": 前半路程耗时占比 <45%; 同一力度下新常数到达半程更快
+   (起步抢速; 注: 纯指数趋近的"前半占比"对 K/C 尺度不变, 只断绝对不对称与半程绝对耗时) */
 (function () {
   const halfAsym = (K, C) => {
     const st = { pos: 50, vel: 1400, target: MAX, min: MIN, max: MAX, over: 0, edgeOn: false };
@@ -153,9 +154,9 @@ for (const v of [100, 800, 2000, 4000, 8000]) {
     return { tHalf, tAll: 600 * dt };
   };
   const oldA = halfAsym(60, 11), newA = halfAsym(P.FLIGHT_K, P.FLIGHT_C);
-  const ratioNew = newA.tHalf / newA.tAll, ratioOld = oldA.tHalf / oldA.tAll;
+  const ratioNew = newA.tHalf / newA.tAll;
   if (newA.tHalf < newA.tAll * 0.45) ok('前半程快后半程慢 (前半仅占 ' + (ratioNew * 100).toFixed(0) + '% 时间)'); else bad('速度分布不够"先快后慢": ' + (ratioNew * 100).toFixed(0) + '%');
-  if (ratioNew < ratioOld) ok('比旧常数更先快后慢 (旧 ' + (ratioOld * 100).toFixed(0) + '% → 新 ' + (ratioNew * 100).toFixed(0) + '%)'); else bad('不对称比未提升: ' + (ratioOld * 100).toFixed(0) + '% → ' + (ratioNew * 100).toFixed(0) + '%');
+  if (newA.tHalf < oldA.tHalf) ok('同力度下半程到达更快 (' + oldA.tHalf.toFixed(2) + 's → ' + newA.tHalf.toFixed(2) + 's)'); else bad('半程耗时未缩短: ' + oldA.tHalf.toFixed(2) + ' → ' + newA.tHalf.toFixed(2));
   if (newA.tAll < 1.2) ok('总收敛时长可接受 (' + newA.tAll.toFixed(2) + 's)'); else bad('收敛太慢: ' + newA.tAll.toFixed(2) + 's');
 })();
 
