@@ -17,6 +17,10 @@ NAMES.forEach(n => byName[n] = document.getElementById('tab-' + n));
    否则它还是按 2 档布局放置的 (宽 183), 与被测状态对不上 */
 if (P.showAllTabs) {
   NAMES.forEach(n => { const e = byName[n]; if (e && e.style.display === 'none') e.style.display = ''; });
+  /* 测试稳定剂: status-page 的异步刷新 (载入时一次 + 切回状态页触发) 会在测试中途
+     把「配置/云控」重新藏起来 —— 档位几何中途变化让 stable 判定假失败。
+     测试期间封掉显隐逻辑 (状态文字照旧不关它事) */
+  window.applySystemStatus = function () {};
 }
 /* 每轮强制把滑块归位到起始档: 同页多轮运行时上一轮的落定位置不是 tabFrom,
    dragstop 等模式的 x0 是按 tabFrom 算的 —— 不归位则起手不在滑块上, sim 为 null */
@@ -300,7 +304,12 @@ const scaleOk = pressUniq >= 5 && pressPeak > 1.29 && Math.abs(pressEnd - 1.28) 
 const tab2 = P.tabTo2 || 'status';
 const c2rel = rel0[tab2];
 let ri = -1;
-for (let i = 0; i < S.length; i++) { if (S[i].tab === tab2) { ri = i; break; } }   /* 页面切到新档 ≈ 改点时刻 */
+/* 改点时刻 = 第二次切页: 必须从"第一次切到 tabTo"之后找 —— 起始页恰好等于 tabTo2 时
+   (如 about 起手点 cloud 再改点 status), 从 0 搜索会命中载入时的初始态 */
+{
+  const iFirst = S.findIndex(s => s.tab === (P.tabTo || 'cloud'));
+  for (let i = (iFirst >= 0 ? iFirst + 1 : 0); i < S.length; i++) { if (S[i].tab === tab2) { ri = i; break; } }
+}
 const beforeR = ri > 0 ? S[ri - 1].c : null;
 const peakAfter = ri >= 0 ? Math.max(...S.slice(ri).map(s => s.c)) : null;
 const rebound = (beforeR !== null && peakAfter !== null) ? +(peakAfter - beforeR).toFixed(1) : null;
@@ -363,7 +372,9 @@ if (shEnd !== null) {
 const retargetOk = stable && ri >= 0 && shrinkWhileMoving <= 3   /* ≤3 个采样 (~60ms): 改点 click 比触摸晚到, 旧目标的缩小窗口还没走完, 属合法瞬态 */
   && landed === tab2 && last.sc > 0.99
   && (shrinkResidual <= 1.5 || shrinkEarly)
-  && (P.expectRebound ? (rebound !== null && rebound > 3) : true);
+  /* 反向改点 (114e 起): 动量泄到 40% —— "稍微缓冲并转向", 过头应小 (<40px);
+     旧规格是全速冲过头再回弹 (>3px), 已废弃 */
+  && (P.expectRebound ? (rebound !== null && rebound >= 0 && rebound < 40) : true);
 const dragOkEarly = dragOk && (P.mode === 'drag' ? (shrinkResidual <= 1.5 || shrinkEarly) : true);
 /* dragstop 量化: 停点前样本测"滞后" (手指-滑块), 停点后测"过头冲量"与"回落" */
 let dsLag = 0, dsOver = 0, dsBack = null, dsNaN = false;

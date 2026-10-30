@@ -578,10 +578,22 @@ window.addEventListener('load', () => {
     switchTab(name);                      /* 页面立即切换 (与旧行为一致) */
     startLoop(performance.now());
   }
-  /* 移动中改点: 只换锁定目标 + 立即切页, 位置与大小都交给弹簧接着走 */
+  /* 移动中改点: 换锁定目标 + 立即切页, 位置与大小交给弹簧接着走。
+     "滑块优先跟手": 反向改点时泄掉大半动量 (稍微缓冲) 再被弹簧拉向新页 ——
+     全速冲过去会过头一百多像素才回头, 谈不上"转向"; 同向改点保持动量直接追过去。
+     另外必须清撞边锁定: 撞过边的飞行里 edgeTab 优先于锁定目标, 不清的话
+     点内侧页面会被拽回边缘档 (转向直接失效) */
   function retargetClickMove(name) {
     clickTab = name;
     switchTab(name);
+    if (sim && visRects.length) {
+      const li = visNames.indexOf(name);
+      if (li >= 0) {
+        const tgt = visRects[li].left;
+        if (sim.vel !== 0 && Math.sign(tgt - sim.pos) !== Math.sign(sim.vel)) sim.vel *= 0.4;
+      }
+      sim.edgeOn = false; sim.edgeTab = null;   /* 新意图优先: 撞边锁定与缓冲态作废 */
+    }
     /* 缩放已提前收但新目标还很远: 重新放大, 收尾时序作废 (由新一段飞行重算) */
     if (shrinkStarted && sim && visRects.length) {
       const li = visNames.indexOf(name);
@@ -683,7 +695,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* 构建标记: 真机若看到的不是这个号, 说明 WebView 还在跑缓存里的旧文件 */
-  window._webuiBuild = '114d-20261005';
+  window._webuiBuild = '114e-20261005';
   if (window.cloudLog) cloudLog('界面构建: ' + window._webuiBuild, 'info');
 
   /* 首次状态 */
