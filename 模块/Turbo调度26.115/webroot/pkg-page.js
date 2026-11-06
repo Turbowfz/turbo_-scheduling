@@ -23,6 +23,31 @@ async function readJsonFile(path) {
    Scene 侧 categories.json 被覆盖/内容漂移时, 开机部署以镜像为准恢复 —— 添加的包名不丢 */
 const PKG_MIRROR = FLAG_DIR + '/categories_user.json';
 
+/* Scene 数据目录探测: sc_installed 旗帜只代表"部署过", Scene 本体可能后来被卸载/清数据
+   —— 目录一没, 所有写入都变成裸 sh 报错 (反馈截图的 "can't create .../categories.json:
+   No such file or directory")。probe 结果:
+     ok     = 目录在, 可写
+     noapp  = Scene 未安装 (应用数据目录整个不在) —— 只能提示用户装回来
+     healed = 应用在但 files/ 不在 (清过数据/没打开过) —— root 补建并归还属主
+     fail   = 补建失败 (异常环境) */
+const SCENE_DATA  = '/data/data/com.omarea.vtools';
+const SCENE_FILES = '/data/data/com.omarea.vtools/files';
+async function sceneFilesReady() {
+  const st = await execStdout(`[ -d '${SCENE_DATA}' ] && echo app || true; [ -d '${SCENE_FILES}' ] && echo dir || true`);
+  const hasApp = st.includes('app'), hasDir = st.includes('dir');
+  if (hasApp && hasDir) return 'ok';
+  if (!hasApp) return 'noapp';
+  /* 应用在而 files/ 不在: 补建目录并归还 Scene 属主 (stat 取应用当前 uid), 模块照常 root 写入 */
+  const r = await execFull(
+    `mkdir -p '${SCENE_FILES}' && chown $(stat -c %u:%g '${SCENE_DATA}') '${SCENE_FILES}' && chmod 700 '${SCENE_FILES}'`, 8000);
+  return r.ec === 0 ? 'healed' : 'fail';
+}
+function sceneMissingMsg(v) {
+  return v === 'noapp'
+    ? '未检测到 Scene (com.omarea.vtools): 包名列表存放在 Scene 数据目录, 请先安装 Scene 并打开一次, 再回来添加'
+    : 'Scene 数据目录不可用 (自动补建失败): 请打开一次 Scene 后重试';
+}
+
 /* 原子写入: 分块base64 → 解码到同目录临时文件 → 校验标记 → mv 原子替换 (中断不损坏原文件)
    withMirror=true (用户实际的增/删操作): 写入后锁 555 + 同步镜像 ——
      555 = Scene 以自身 uid 打开写入被拒 (不允许 Scene 改此文件); WebUI 走 root 不受限制;
@@ -89,6 +114,16 @@ window.loadPackages = async function() {
       return;
     }
     document.getElementById('package-list').innerHTML = '<div class="empty-tip"><svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>正在加载包名列表...</div>';
+    /* Scene 数据目录探测 (反馈的裸 sh 报错根因): 目录不在时给出人话, 不再撞 "can't create" */
+    const sv = await sceneFilesReady();
+    if (sv === 'noapp' || sv === 'fail') {
+      document.getElementById('package-list').innerHTML = '<div class="empty-tip">' + (sv === 'noapp' ? '未检测到 Scene, 请安装并打开一次 Scene 后再使用本页' : 'Scene 数据目录不可用, 请打开一次 Scene 后重试') + '</div>';
+      const cnt = document.getElementById('package-count');
+      if (cnt) cnt.textContent = '—';
+      pkgLog(sceneMissingMsg(sv), 'error');
+      return;
+    }
+    if (sv === 'healed') pkgLog('Scene 数据目录缺失, 已自动补建', 'warning');
     const c = await loadOrCreateConfig();
     const t = c.find(x => x.category === 'ShortVideo');
     if (t && Array.isArray(t.packages)) {
@@ -120,6 +155,9 @@ window.addPackage = async function() {
   /* 未启用二改调度时不允许写 categories.json */
   const scOn = await execStdout(`[ -f '${FLAG_DIR}/sc_installed' ] && echo 1 || true`);
   if (!scOn.includes('1')) { pkgLog('未启用二改Scene调度, 无法编辑', 'error'); return; }
+  /* Scene 数据目录探测: 不在时给人话提示, 不再撞裸 sh 报错 */
+  const svAdd = await sceneFilesReady();
+  if (svAdd === 'noapp' || svAdd === 'fail') { pkgLog('添加失败: ' + sceneMissingMsg(svAdd), 'error'); return; }
   _adding = true;
   try {
     const c = await loadOrCreateConfig();
@@ -142,6 +180,8 @@ window.deletePackage = async function(pkg) {
   if (_deleting) return;
   const scOn = await execStdout(`[ -f '${FLAG_DIR}/sc_installed' ] && echo 1 || true`);
   if (!scOn.includes('1')) { pkgLog('未启用二改Scene调度, 无法编辑', 'error'); return; }
+  const svDel = await sceneFilesReady();
+  if (svDel === 'noapp' || svDel === 'fail') { pkgLog('删除失败: ' + sceneMissingMsg(svDel), 'error'); return; }
   _deleting = true;
   try {
     const c = await loadOrCreateConfig();
