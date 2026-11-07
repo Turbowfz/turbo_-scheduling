@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# 备份范围收窄的本地演练 (26.116: 只 json/conf, 不含 .sh): 用假目录跑 common.sh 里的 scene_cfg_* 三个函数
+# 备份范围的本地演练 (26.116: 只 json/conf, 不含 .sh): 用假目录跑 common.sh 里的 scene_cfg_* 三个函数
 # (不依赖真机: 只测文件筛选/相对路径/备份-还原往返/老备份清理/还原校验)
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -27,9 +27,9 @@ log() { :; }
 BK="$TMP/backup"
 scene_cfg_copy "$SRC" "$BK"
 got=$(cd "$BK" && find . -type f | sort | tr '\n' ' ')
-want="./_Games.json ./legacy.CONF ./profile.json ./scene.conf ./sub/nested.json "
-[ "$got" = "$want" ] && ok "备份只含 json/conf (含 .CONF 与子目录, 不含 .sh)" || bad "备份内容不符: $got"
-case "$got" in *powercfg.sh*) bad "powercfg.sh 不该进备份 (.sh 由 Scene 生成)" ;; *) ok "powercfg.sh (.sh) 未进备份" ;; esac
+want="./_Games.json ./legacy.CONF ./powercfg.sh ./profile.json ./scene.conf ./sub/nested.json "
+[ "$got" = "$want" ] && ok "备份只含 json/sh/conf (含 .CONF 与子目录)" || bad "备份内容不符: $got"
+case "$got" in *powercfg.sh*) ok "powercfg.sh (.sh) 已进备份" ;; *) bad "powercfg.sh 漏备 (还原后 Scene 还在用模块调度)" ;; esac
 junk=0
 for j in cache/blob.bin database.db sub/notes.txt cache/huge.dat; do [ -f "$BK/$j" ] && junk=1; done
 [ "$junk" = "0" ] && ok "无关数据文件 (bin/db/txt/dat) 未进备份" || bad "备份混入了非配置文件"
@@ -49,7 +49,7 @@ OLD="$TMP/oldbk"; mkdir -p "$OLD/cache" "$OLD/sub2"
 : > "$OLD/database.db"; : > "$OLD/sub2/nested.CONF"
 scene_cfg_prune "$OLD"
 left=$(cd "$OLD" && find . -type f | sort | tr '\n' ' ')
-[ "$left" = "./profile.json ./sub2/nested.CONF " ] && ok "老备份清理: 只剩 json/conf (旧备份里的 .sh 一并清掉)" || bad "清理结果不符: $left"
+[ "$left" = "./powercfg.sh ./profile.json ./sub2/nested.CONF " ] && ok "老备份清理: 只剩 json/sh/conf" || bad "清理结果不符: $left"
 [ -d "$OLD/cache" ] && bad "空目录 cache 未清理" || ok "空目录已清理"
 [ -d "$OLD/sub2" ] && ok "非空子目录 sub2 保留" || bad "非空子目录被误删"
 

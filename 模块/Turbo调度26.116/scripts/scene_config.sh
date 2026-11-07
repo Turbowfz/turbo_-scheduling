@@ -69,10 +69,10 @@ create_backup() {
   fi
   # 通过门槛才建目录: 之前无条件 mkdir, 用户只装云控时也会留下一个空的 backup/
   mkdir -p "$backup_dir" 2>/dev/null
-  # 只备份 json + conf (不备份 .sh: powercfg.sh 由 Scene 自己按 profile.json 生成);
+  # 只备份 json + sh + conf (powercfg.sh 是 Scene 的调度脚本本体, 必须一起备份才还原得回去);
   # 不做 chmod -R: cp -af 原样保留属主/上下文/权限
   scene_cfg_copy "$VT_FILES" "$backup_dir"
-  log "备份Scene原版配置完成 (仅 json/conf, manifest=$(scene_manifest_version 2>/dev/null))"
+  log "备份Scene原版配置完成 (仅 json/sh/conf, manifest=$(scene_manifest_version 2>/dev/null))"
 }
 
 # 权限仅在不一致时才改 (chmod 同值也更新 ctime, 触发热加载)
