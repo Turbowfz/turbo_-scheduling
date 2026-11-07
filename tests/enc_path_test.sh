@@ -5,7 +5,7 @@
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-SRC="$HERE/../模块/Turbo调度26.115/scripts/cloud_ctrl.sh"
+SRC="$HERE/../模块/Turbo调度26.116/scripts/cloud_ctrl.sh"
 [ -f "$SRC" ] || { echo "找不到 cloud_ctrl.sh"; exit 1; }
 
 # 抽真实代码 (不复制, 避免与源码漂移): .enc 分支 + 收尾 localize

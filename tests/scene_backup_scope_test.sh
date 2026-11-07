@@ -1,9 +1,9 @@
 #!/system/bin/sh
-# 备份范围收窄的本地演练: 用假目录跑 common.sh 里的 scene_cfg_* 三个函数
+# 备份范围收窄的本地演练 (26.116: 只 json/conf, 不含 .sh): 用假目录跑 common.sh 里的 scene_cfg_* 三个函数
 # (不依赖真机: 只测文件筛选/相对路径/备份-还原往返/老备份清理/还原校验)
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-COMMON="$HERE/../模块/Turbo调度26.115/scripts/common.sh"
+COMMON="$HERE/../模块/Turbo调度26.116/scripts/common.sh"
 [ -f "$COMMON" ] || { echo "找不到 common.sh: $COMMON"; exit 1; }
 
 TMP=$(mktemp -d)
@@ -27,8 +27,9 @@ log() { :; }
 BK="$TMP/backup"
 scene_cfg_copy "$SRC" "$BK"
 got=$(cd "$BK" && find . -type f | sort | tr '\n' ' ')
-want="./_Games.json ./legacy.CONF ./powercfg.sh ./profile.json ./scene.conf ./sub/nested.json "
-[ "$got" = "$want" ] && ok "备份只含 json/sh/conf (含 .CONF 与子目录)" || bad "备份内容不符: $got"
+want="./_Games.json ./legacy.CONF ./profile.json ./scene.conf ./sub/nested.json "
+[ "$got" = "$want" ] && ok "备份只含 json/conf (含 .CONF 与子目录, 不含 .sh)" || bad "备份内容不符: $got"
+case "$got" in *powercfg.sh*) bad "powercfg.sh 不该进备份 (.sh 由 Scene 生成)" ;; *) ok "powercfg.sh (.sh) 未进备份" ;; esac
 junk=0
 for j in cache/blob.bin database.db sub/notes.txt cache/huge.dat; do [ -f "$BK/$j" ] && junk=1; done
 [ "$junk" = "0" ] && ok "无关数据文件 (bin/db/txt/dat) 未进备份" || bad "备份混入了非配置文件"
@@ -48,7 +49,7 @@ OLD="$TMP/oldbk"; mkdir -p "$OLD/cache" "$OLD/sub2"
 : > "$OLD/database.db"; : > "$OLD/sub2/nested.CONF"
 scene_cfg_prune "$OLD"
 left=$(cd "$OLD" && find . -type f | sort | tr '\n' ' ')
-[ "$left" = "./powercfg.sh ./profile.json ./sub2/nested.CONF " ] && ok "老备份清理: 只剩配置类文件" || bad "清理结果不符: $left"
+[ "$left" = "./profile.json ./sub2/nested.CONF " ] && ok "老备份清理: 只剩 json/conf (旧备份里的 .sh 一并清掉)" || bad "清理结果不符: $left"
 [ -d "$OLD/cache" ] && bad "空目录 cache 未清理" || ok "空目录已清理"
 [ -d "$OLD/sub2" ] && ok "非空子目录 sub2 保留" || bad "非空子目录被误删"
 
@@ -69,6 +70,42 @@ while IFS= read -r bf; do
   [ -f "$SRC/$rel" ] || miss=$((miss+1))
 done < "$list"
 [ "$miss" = "1" ] && ok "还原校验: 缺 1 个文件被检出" || bad "缺失未检出 (miss=$miss)"
+
+# 5) manifest.json 原版判定 (26.116): LP/HP/EP = Scene 原版; Turbo_* = 本模块已改
+MF="$TMP/mf"; mkdir -p "$MF"
+printf '{\n  "version": "LP",\n  "versionCode": 20261007,\n  "files": ["_apps.json"]\n}\n' > "$MF/manifest.json"
+VT_FILES="$MF"
+[ "$(scene_manifest_version)" = "LP" ] && ok "manifest: 取到 version=LP" || bad "version 取值失败: $(scene_manifest_version)"
+scene_is_original && ok "manifest: LP 判为原版" || bad "LP 未判为原版"
+for v in HP EP hp; do
+  printf '{"version": "%s"}\n' "$v" > "$MF/manifest.json"
+  scene_is_original && ok "manifest: $v 判为原版" || bad "$v 未判为原版"
+done
+printf '{"version": "Turbo_oplus"}\n' > "$MF/manifest.json"
+scene_is_original && bad "Turbo_oplus 被误判为原版" || ok "manifest: Turbo_oplus 判为非原版 (不备份自家配置)"
+printf '{"version": "Turbo_generic", "versionCode": 1}\n' > "$MF/manifest.json"
+scene_is_original && bad "Turbo_generic 被误判为原版" || ok "manifest: Turbo_generic 判为非原版"
+[ "$(scene_manifest_version)" = "Turbo_generic" ] && ok "manifest: versionCode 不会误命中 version" || bad "version 被 versionCode 干扰: $(scene_manifest_version)"
+rm -f "$MF/manifest.json"
+scene_manifest_version >/dev/null && bad "缺 manifest 时应返回失败" || ok "manifest: 缺失时返回失败 (不备份)"
+
+# 6) drop_scene_backup: 只装云控时把原版还回去并删备份目录
+FLAG_DIR="$TMP/flag"; VT_FILES="$TMP/vt"; mkdir -p "$FLAG_DIR/backup" "$VT_FILES"
+printf '{"version": "Turbo_oplus"}\n' > "$VT_FILES/manifest.json"
+echo OURS > "$VT_FILES/profile.json"; : > "$VT_FILES/powercfg.sh"
+printf '{"version": "LP"}\n' > "$FLAG_DIR/backup/manifest.json"
+: > "$FLAG_DIR/backup/profile.json"
+am() { :; }   # 桩: drop_scene_backup 会 force-stop Scene
+drop_scene_backup
+[ ! -s "$VT_FILES/profile.json" ] && ok "未启用二改: 原版 profile.json 已还回" || bad "原版未还回"
+[ ! -d "$FLAG_DIR/backup" ] && ok "未启用二改: 备份目录已清除 (不留残余)" || bad "备份目录仍在"
+# 已是原版时不拿旧快照盖掉用户新改的配置
+mkdir -p "$FLAG_DIR/backup"; printf '{"version": "LP"}\n' > "$FLAG_DIR/backup/manifest.json"
+: > "$FLAG_DIR/backup/profile.json"; printf '{"version": "HP"}\n' > "$VT_FILES/manifest.json"
+echo USERNEW > "$VT_FILES/profile.json"
+drop_scene_backup
+[ "$(cat "$VT_FILES/profile.json")" = "USERNEW" ] && ok "未启用二改: Scene 已是原版时不覆盖用户设置" || bad "用户设置被旧快照覆盖!"
+[ ! -d "$FLAG_DIR/backup" ] && ok "未启用二改: 备份目录照样清掉" || bad "备份目录仍在"
 
 rm -rf "$TMP"
 echo ""

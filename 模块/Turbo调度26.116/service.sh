@@ -101,6 +101,14 @@ if [ -f "$FLAG_DIR/sc_installed" ]; then
   find "$VT_FILES/kr-script/cache" -type d -not -perm -777 -exec chmod 777 {} + 2>/dev/null
 
   log "[Scene] 初始化完成"
+else
+  # 未启用二改调度: 老版本留下过 backup/ (有的还是"整目录备份", 上百个 .so/.dex/图标),
+  # 只装云控的用户用不到 —— 开机顺手清掉, 不必等下次重装模块。
+  # drop_scene_backup 只在 Scene 当前仍是模块改过的配置时才把原版还回 (见 common.sh)
+  if [ -d "$FLAG_DIR/backup" ]; then
+    log "[Scene] 未启用二改调度, 清理遗留的 Scene 备份"
+    drop_scene_backup
+  fi
 fi
 
 # ── 云控注入 ──

@@ -49,19 +49,30 @@ deploy_config() {
   return 0
 }
 
+# 备份 Scene 原版配置 (只在"用户确实选了二改调度"时由 install_mode 调用)
 create_backup() {
-  local backup_dir="$FLAG_DIR/backup"
-  mkdir -p "$backup_dir"
-  # 已有备份 (以 *.json 为标志) → 只做一次迁移清理: 老版本备份了整个目录, 现在只留 json/sh/conf。
-  # 绝不在此时重新拷贝: 备份必须是"本模块改动之前"的原始文件, 当前目录里的已经是改过的了
+  local backup_dir="$FLAG_DIR/backup" v
+  # 已有备份 → 只做一次迁移清理 (老版本备份整个目录 / 含 .sh), 绝不重新拷贝:
+  # 备份必须是"本模块改动之前"的原版, 此刻目录里的已经是改过的了
   if [ -n "$(ls "$backup_dir"/*.json 2>/dev/null)" ]; then
     scene_cfg_prune "$backup_dir"
     return 0
   fi
   [ -d "$VT_FILES" ] || return 0
-  # 只备份配置类文件 (json/sh/conf, 扩展名不分大小写); 不做 chmod -R: cp -af 原样保留属主/上下文/权限
+  # 只在"确认是 Scene 原版配置"时备份: manifest.json 的 version 为 LP/HP/EP 才是原版;
+  # 已经是 Turbo_oplus / Turbo_generic = 我们改过的 —— 备份它等于把自家的存起来,
+  # 以后还原就还原成我们自己的配置 (等于没还原)
+  if ! scene_is_original; then
+    v=$(scene_manifest_version 2>/dev/null)
+    log "跳过备份: Scene 配置非原版 (manifest version=${v:-不可读})"
+    return 0
+  fi
+  # 通过门槛才建目录: 之前无条件 mkdir, 用户只装云控时也会留下一个空的 backup/
+  mkdir -p "$backup_dir" 2>/dev/null
+  # 只备份 json + conf (不备份 .sh: powercfg.sh 由 Scene 自己按 profile.json 生成);
+  # 不做 chmod -R: cp -af 原样保留属主/上下文/权限
   scene_cfg_copy "$VT_FILES" "$backup_dir"
-  log "备份Scene原始配置完成 (仅 json/sh/conf)"
+  log "备份Scene原版配置完成 (仅 json/conf, manifest=$(scene_manifest_version 2>/dev/null))"
 }
 
 # 权限仅在不一致时才改 (chmod 同值也更新 ctime, 触发热加载)
@@ -191,6 +202,9 @@ install_mode() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
     log "Scene目录不存在，跳过Scene调度"
 
+    # 没有 Scene 就不该留着备份目录 (旧版遗留 / 用户卸了 Scene 后重装)
+    drop_scene_backup
+
     is_oplus && ask_cloud_only
     return 1
   fi
@@ -230,6 +244,7 @@ install_mode() {
         deploy_config "$prev_type" || return 1
       else
         # 之前没开二改: 清掉残留标记, 不部署也不动 Scene 配置
+        drop_scene_backup
         rm -f "$FLAG_DIR/sc_installed" "$FLAG_DIR/config_type"
       fi
       if [ "$prev_cloud" = "1" ]; then
@@ -255,6 +270,9 @@ install_mode() {
   key=$(wait_key 30)
   if [ "$key" != "KEY_VOLUMEUP" ]; then
     echo "  - 已跳过二改调度"
+    # 之前装过二改调度: 先把原版配置还回 Scene, 再清备份目录 —— 只装云控时不该留 backup/,
+    # 但直接删会把原版丢掉 (还回只在 manifest 仍是 Turbo_* 时做, 见 drop_scene_backup)
+    drop_scene_backup
     rm -f "$FLAG_DIR/sc_installed" "$FLAG_DIR/config_type"
     log "用户跳过二改调度"
     # 从通用版改回跳过时, 必须把 stop_official 关掉的 persist 属性拉回来:
@@ -358,6 +376,10 @@ case "$MODE" in
     log "=== 部署模式开始 ==="
     # prepare_scene_dir (common.sh) 干的就是原来 wait_scene_dir 的事, 还多一步 mkdir -p 兜底
     prepare_scene_dir 60 || { log "部署中止: Scene目录不存在"; exit 1; }
+    # 实时补备份: 安装那一刻 Scene 还没就绪 (目录不存在/刚装还没打开) 时没能备份,
+    # 这里在"即将覆盖"前再看一眼 —— 已有备份直接返回; manifest 仍是原版 (LP/HP/EP) 才拷,
+    # 已经是自家的 Turbo_* 就跳过 (不能把改过的配置当原版存下来)
+    create_backup
     copy_to_scene force   # 每次开机强制切回二改调度
     log "=== 部署模式结束 ==="
     ;;
