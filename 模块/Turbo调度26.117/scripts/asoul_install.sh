@@ -21,9 +21,11 @@ JSON_TMP="$LOG_DIR/.asoul_api.json"
 mkdir -p "$LOG_DIR"
 . "${0%/*}/common.sh"
 
-# 加速镜像 (前缀代理, 拼在完整 GitHub URL 前)。gh-proxy.com 真机实测 API+资产双稳
-# (ghfast/moeyy 等已死, 不加 —— 死镜像只白耗等待时间)
-GH_MIRRORS="https://gh-proxy.com/"
+# 加速镜像 (前缀代理, 拼在完整 GitHub URL 前)。2026-11-15 真机实测 (10 候选仅 2 存活,
+# ghfast/moeyy/ghps/llkk/ghp.ci 等已死):
+#   gh-proxy.com  API+资产 双通 (API 2.0s / 资产 1.2s)
+#   ghproxy.net   仅资产 (API 403, curl -f 快速失败无害)
+GH_MIRRORS="https://gh-proxy.com/ https://ghproxy.net/"
 
 # fetch <url> <输出文件> [超时秒]: curl 优先 (-f: HTTP>=400 视为失败, 免得把 403 页面当结果), wget 兜底
 fetch() {
@@ -75,10 +77,25 @@ fi
 log "资产地址: $ASOUL_DL_URL"
 echo "  + 已获取最新版地址"
 
-# ── 2) 下载 + 完整性校验 (直连失败自动走镜像) ──
+# ── 2) 下载 + 完整性校验: 直连 → 镜像 → GitCode 自动镜像 (三条独立链路) ──
 echo "  - 下载中..."
-if ! fetch_gh "$ASOUL_DL_URL" "$TMP_ZIP" 40; then
-  echo "  ! 下载失败 (直连与镜像均失败), 跳过 AsoulOpt (详见 log/asoul.log)"
+_dl_ok=0
+if fetch_gh "$ASOUL_DL_URL" "$TMP_ZIP" 40; then
+  _dl_ok=1
+else
+  # 第三条路: GitCode 的 GitHub_Trending 自动镜像 (CSDN CDN, 基建独立, 只能取资产不能代理
+  # API)。URL 改写: github.com/<owner>/<repo>/releases/download/... → gitcode.com/GitHub_Trending/
+  # /<repo前2字母>/<repo>/releases/download/...  真机实测 0.65s 取回有效 zip
+  _rest="${ASOUL_DL_URL#https://github.com/}"
+  _tail="${_rest#*/}"
+  _repo="${_tail%%/*}"
+  _gc="https://gitcode.com/GitHub_Trending/$(echo "$_repo" | cut -c1-2 | tr 'A-Z' 'a-z')/${_repo}/releases/${_tail#*/releases/}"
+  log "直连与镜像均失败, 尝试 GitCode 镜像: $_gc"
+  echo "  - 尝试 GitCode 镜像..."
+  fetch "$_gc" "$TMP_ZIP" 40 && _dl_ok=1 && log "获取成功 (GitCode 镜像)"
+fi
+if [ "$_dl_ok" != "1" ]; then
+  echo "  ! 下载失败 (直连/镜像/GitCode 均失败), 跳过 AsoulOpt (详见 log/asoul.log)"
   log "错误: 下载失败"
   exit 0
 fi
