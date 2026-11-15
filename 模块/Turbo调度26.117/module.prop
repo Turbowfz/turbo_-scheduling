@@ -1,10 +1,10 @@
 id=Turbo_Scheduling
 name=Turbo调度
-version=v26.116
-versionCode=26116
+version=v26.117
+versionCode=26117
 author=Turbo
 description=重启后生效
-banner=oplus.png
+banner=oplus.jpg
 support=https://www.coolapk.com/u/36667900
 donate=https://www.coolapk.com/u/36667900
 updateJson=https://gitee.com/turbowfz/turbo_-scheduling/raw/master/update.json

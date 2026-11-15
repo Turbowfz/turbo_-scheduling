@@ -1,9 +1,9 @@
 #!/system/bin/sh
-# 备份范围的本地演练 (26.116: 只 json/conf, 不含 .sh): 用假目录跑 common.sh 里的 scene_cfg_* 三个函数
+# 备份范围的本地演练 (26.116: json/sh/conf): 用假目录跑 common.sh 里的 scene_cfg_* 三个函数
 # (不依赖真机: 只测文件筛选/相对路径/备份-还原往返/老备份清理/还原校验)
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-COMMON="$HERE/../模块/Turbo调度26.116/scripts/common.sh"
+COMMON="$HERE/../模块/Turbo调度26.117/scripts/common.sh"
 [ -f "$COMMON" ] || { echo "找不到 common.sh: $COMMON"; exit 1; }
 
 TMP=$(mktemp -d)

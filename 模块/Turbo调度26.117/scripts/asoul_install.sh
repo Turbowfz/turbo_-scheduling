@@ -1,9 +1,14 @@
 #!/system/bin/sh
 # AsoulOpt 云端安装: 从 nakixii/Magisk_AsoulOpt 最新 release 下载并安装 (包不随本模块分发)。
-# 直连 GitHub; 失败不留包; 不清理旧版 (新版由管理器直接覆盖);
-# 已安装版本 >= 云端版本时直接跳过 (不询问), 网络不可达时跳过且不阻塞安装流程。
+# GitHub 直连 + 加速镜像兜底 (国内直连 GitHub 间歇性失败, 反馈"网络连接失败"的根因);
+# 失败不留包; 不清理旧版 (新版由管理器直接覆盖);
+# 已安装版本 >= 云端版本时直接跳过 (不询问), 全部链路失败时跳过且不阻塞安装流程。
 
-MODPATH="$1"
+if [ -n "$1" ]; then
+  MODPATH="$1"
+else
+  MODPATH="$(cd "${0%/*}/.." && pwd)"   # 缺省 = 脚本所在模块根 (scripts/ 的上级), 相对/绝对路径都成立
+fi
 ASOUL_REPO="nakixii/Magisk_AsoulOpt"
 ASOUL_MOD_NAME="asoul_affinity_opt"
 ASOUL_MOD_PATH="/data/adb/modules/$ASOUL_MOD_NAME"
@@ -16,16 +21,35 @@ JSON_TMP="$LOG_DIR/.asoul_api.json"
 mkdir -p "$LOG_DIR"
 . "${0%/*}/common.sh"
 
-# fetch <url> <输出文件> [超时秒]: curl 优先, wget 兜底
+# 加速镜像 (前缀代理, 拼在完整 GitHub URL 前)。gh-proxy.com 真机实测 API+资产双稳
+# (ghfast/moeyy 等已死, 不加 —— 死镜像只白耗等待时间)
+GH_MIRRORS="https://gh-proxy.com/"
+
+# fetch <url> <输出文件> [超时秒]: curl 优先 (-f: HTTP>=400 视为失败, 免得把 403 页面当结果), wget 兜底
 fetch() {
   local url="$1" out="$2" t="${3:-30}"
   rm -f "$out" 2>/dev/null
   if command -v curl >/dev/null 2>&1; then
-    curl -L --max-time "$t" -o "$out" "$url" >>"$LOG_FILE" 2>&1 && [ -s "$out" ] && return 0
+    curl -fsSL --max-time "$t" -o "$out" "$url" >>"$LOG_FILE" 2>&1 && [ -s "$out" ] && return 0
   fi
   if command -v wget >/dev/null 2>&1; then
     wget -T "$t" -O "$out" "$url" >>"$LOG_FILE" 2>&1 && [ -s "$out" ] && return 0
   fi
+  return 1
+}
+
+# fetch_gh <github完整url> <输出文件> [单次超时秒]: 直连 → 加速镜像, 每端点带一次重试
+fetch_gh() {
+  local url="$1" out="$2" t="${3:-30}" m full
+  rm -f "$out" 2>/dev/null
+  fetch "$url" "$out" "$t" && { log "获取成功 (直连)"; return 0; }
+  log "直连失败, 改走加速镜像: $url"
+  for m in $GH_MIRRORS; do
+    full="${m}${url}"
+    fetch "$full" "$out" "$t" && { log "获取成功 (镜像 ${m})"; return 0; }
+    fetch "$full" "$out" "$t" && { log "获取成功 (镜像 ${m}, 重试)"; return 0; }
+  done
+  log "直连与镜像均失败: $url"
   return 1
 }
 
@@ -36,25 +60,25 @@ echo "  ! 若安装请停用其他游戏线程优化模块"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
 log "=== AsoulOpt 云端安装开始 ==="
 
-# ── 1) 取最新 release 的资产地址与 sha256 (GitHub API) ──
+# ── 1) 取最新 release 的资产地址与 sha256 (GitHub API, 直连失败自动走镜像) ──
 rm -f "$JSON_TMP"
-fetch "https://api.github.com/repos/$ASOUL_REPO/releases/latest" "$JSON_TMP" 20
+fetch_gh "https://api.github.com/repos/$ASOUL_REPO/releases/latest" "$JSON_TMP" 15
 ASOUL_DL_URL=$(grep -o '"browser_download_url": *"[^"]*\.zip"' "$JSON_TMP" 2>/dev/null | head -1 | sed 's/.*"\(https[^"]*\)"/\1/')
 ASOUL_SHA256=$(grep -o '"digest": *"sha256:[0-9a-f]*"' "$JSON_TMP" 2>/dev/null | head -1 | sed 's/.*sha256://;s/"//')
 rm -f "$JSON_TMP" 2>/dev/null
 
 if [ -z "$ASOUL_DL_URL" ]; then
-  echo "  ! 云端不可达, 跳过 AsoulOpt (不影响本模块其它功能)"
-  log "错误: 无法获取 AsoulOpt 最新版地址"
+  echo "  ! GitHub 直连与加速镜像均不可达, 跳过 AsoulOpt (不影响本模块其它功能)"
+  log "错误: 无法获取 AsoulOpt 最新版地址 (直连+镜像均失败)"
   exit 0
 fi
 log "资产地址: $ASOUL_DL_URL"
 echo "  + 已获取最新版地址"
 
-# ── 2) 下载 + 完整性校验 ──
+# ── 2) 下载 + 完整性校验 (直连失败自动走镜像) ──
 echo "  - 下载中..."
-if ! fetch "$ASOUL_DL_URL" "$TMP_ZIP" 60; then
-  echo "  ! 下载失败, 跳过 AsoulOpt (详见 log/asoul.log)"
+if ! fetch_gh "$ASOUL_DL_URL" "$TMP_ZIP" 40; then
+  echo "  ! 下载失败 (直连与镜像均失败), 跳过 AsoulOpt (详见 log/asoul.log)"
   log "错误: 下载失败"
   exit 0
 fi
